@@ -5,6 +5,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { S, h, icon, invoke, modal, field, toast, statusDot } from "./ui.js";
 import { t as tr } from "./i18n.js";
+import { Suggest } from "./suggest.js";
 
 // Layout tree per tab: { split: "h"|"v", ratio, a, b } | Pane
 const tabs = [];
@@ -76,7 +77,11 @@ class Pane {
     term.onData((d) => invoke("ssh_write", { id: this.session, data: d }).catch(() => {}));
     term.onResize(({ cols, rows }) => invoke("ssh_resize", { id: this.session, cols, rows }).catch(() => {}));
     term.onSelectionChange(() => S.settings.terminal.copy_on_select && term.hasSelection() && navigator.clipboard.writeText(term.getSelection()));
+    const id = this.session;
+    this.suggest = new Suggest(term, host.id, (d) => invoke("ssh_write", { id, data: d }).catch(() => {}), () => S.settings.terminal.suggestions);
+    invoke("ssh_history", { id }).then((list) => this.suggest?.setRemote(list), () => {});
     term.attachCustomKeyEventHandler((e) => {
+      if (!this.suggest.handleKey(e)) return false;
       // Ctrl+Shift+C/V on Linux/Windows (Cmd+C/V on macOS come from the native Edit menu).
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && !isMacPlatform()) {
         if (e.code === "KeyC") { navigator.clipboard.writeText(term.getSelection()); return false; }
@@ -123,6 +128,8 @@ class Pane {
     if (this.session) invoke("ssh_close", { id: this.session });
     bySession.delete(this.session);
     this.ro?.disconnect();
+    this.suggest?.dispose();
+    this.suggest = null;
     this.term?.dispose();
     this.term = this.fit = null;
   }

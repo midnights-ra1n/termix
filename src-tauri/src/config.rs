@@ -44,6 +44,8 @@ pub struct Terminal {
     pub cursor_blink: bool,
     pub scrollback: u32,
     pub copy_on_select: bool,
+    /// Inline command predictions from history (→ to accept).
+    pub suggestions: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -91,6 +93,7 @@ impl Default for Terminal {
             cursor_blink: true,
             scrollback: 10000,
             copy_on_select: false,
+            suggestions: true,
         }
     }
 }

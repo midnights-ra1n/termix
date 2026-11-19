@@ -424,3 +424,42 @@ mod tests {
         assert_eq!((s.kernel.as_str(), s.uptime_secs), ("Linux 6.8.12", 3600));
     }
 }
+
+// ---------- remote shell history (seed for command suggestions) ----------
+
+pub const HISTORY_CMD: &str = r#"sh -c 'tail -n 3000 ~/.bash_history ~/.zsh_history ~/.local/share/fish/fish_history 2>/dev/null' 2>/dev/null"#;
+
+/// Parses bash, zsh (incl. EXTENDED_HISTORY `: ts:0;cmd`) and fish (`- cmd: …`) history. Most recent last, deduplicated.
+pub fn parse_history(raw: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in raw.lines() {
+        if line.starts_with("==> ") {
+            continue; // `tail` file headers
+        }
+        let cmd = if let Some(rest) = line.strip_prefix("- cmd: ") {
+            rest
+        } else if line.starts_with("  when:") || line.starts_with("  paths:") || line.starts_with("    - ") || line.starts_with('#') {
+            continue;
+        } else if let Some(rest) = line.strip_prefix(": ").and_then(|r| r.split_once(';')).map(|(_, c)| c) {
+            rest
+        } else {
+            line
+        };
+        let cmd = cmd.trim();
+        if cmd.len() < 2 || cmd.len() > 500 || cmd.ends_with('\\') {
+            continue;
+        }
+        out.retain(|c| c != cmd);
+        out.push(cmd.to_string());
+    }
+    out
+}
+
+#[cfg(test)]
+mod history_tests {
+    #[test]
+    fn parses_all_shells() {
+        let raw = "==> /root/.bash_history <==\nls -la\ngit status\n#1700000000\nls -la\n\n==> /root/.zsh_history <==\n: 1700000000:0;docker ps\n\n==> /root/.local/share/fish/fish_history <==\n- cmd: systemctl status nginx\n  when: 1700000000\n";
+        assert_eq!(super::parse_history(raw), vec!["git status", "ls -la", "docker ps", "systemctl status nginx"]);
+    }
+}

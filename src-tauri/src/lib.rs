@@ -225,6 +225,12 @@ async fn ssh_stats(st: State<'_, AppState>, id: String) -> R<ssh::Stats> {
 }
 
 #[tauri::command]
+async fn ssh_history(st: State<'_, AppState>, id: String) -> R<Vec<String>> {
+    let s = sess(&st, &id).await?;
+    Ok(ssh::parse_history(&ssh::exec(&s.handle, ssh::HISTORY_CMD).await.map_err(e)?))
+}
+
+#[tauri::command]
 async fn sftp_list(st: State<'_, AppState>, id: String, path: String) -> R<(String, Vec<ssh::Entry>)> {
     let s = sess(&st, &id).await?;
     ssh::sftp_list(s.sftp().await.map_err(e)?, &path).await.map_err(e)
@@ -488,7 +494,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             boot, app_ready, set_labels, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
-            ssh_connect, ssh_write, ssh_resize, ssh_close, ssh_stats,
+            ssh_connect, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
             check_update, install_update
         ])

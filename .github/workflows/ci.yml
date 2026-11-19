@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: node scripts/check-i18n.mjs
+      - run: node scripts/check-i18n.mjs && node scripts/check-suggest.mjs
       - run: pnpm build
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml
       - run: cargo test --manifest-path src-tauri/Cargo.toml

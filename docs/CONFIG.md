@@ -37,6 +37,7 @@ cursor_style = "block"       # block, bar, underline
 cursor_blink = true
 scrollback = 10000
 copy_on_select = false
+suggestions = true           # prédiction des commandes (texte grisé)
 
 [behavior]
 tray_icon = true             # icône barre des menus (macOS) / zone de notification (GNOME, KDE, Windows)
@@ -111,3 +112,13 @@ Toutes les 30 s (et à chaque modification des hôtes), RustTerm vérifie chaque
 - **rouge** : ni ping ni SSH.
 
 Le statut s'affiche dans la liste des hôtes et dans le menu de la barre des menus / zone de notification. Le ping utilise la commande `ping` du système : un hôte qui bloque l'ICMP mais dont le SSH répond reste vert.
+
+## Suggestions de commandes
+
+Pendant la saisie, RustTerm affiche en grisé la suite la plus probable de la commande, tirée de l'historique du serveur (`~/.bash_history`, `~/.zsh_history`, historique fish, lus à la connexion) et de vos commandes passées sur cet hôte (stockées localement).
+
+- `→` ou `Fin` : accepter la suggestion
+- `⌥→` / `Alt+→` : accepter le mot suivant
+- `⇧Tab` : liste des suggestions (`↑` `↓` pour choisir, `Entrée` pour valider, `Échap` pour fermer)
+
+`Tab` reste envoyé au shell distant pour sa propre complétion. Les suggestions sont désactivées dans les applications plein écran (vim, htop…) et quand la ligne n'a pas de prompt reconnu (`$ # % > ❯ ➜` ou séparateur Powerline).

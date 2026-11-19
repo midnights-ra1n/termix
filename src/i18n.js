@@ -4,6 +4,7 @@
 export const LANGS = { fr: "Français", en: "English", es: "Español", de: "Deutsch" };
 
 const fr = {
+  suggestions: "Suggestions de commandes", sugg_hint: "D'après l'historique du serveur et le vôtre. → accepte, ⌥/Alt+→ un mot, ⇧Tab affiche la liste.", clear_history: "Effacer l'historique local", history_cleared: "Historique local effacé",
   // native menus / tray
   about: "À propos de RustTerm", check_update: "Rechercher des mises à jour…", settings: "Réglages…", quit_app: "Quitter RustTerm",
   menu_file: "Fichier", menu_edit: "Édition", menu_view: "Présentation", menu_window: "Fenêtre", menu_help: "Aide",
@@ -67,6 +68,7 @@ const fr = {
 };
 
 const en = {
+  suggestions: "Command suggestions", sugg_hint: "From the server's history and yours. → accepts, ⌥/Alt+→ one word, ⇧Tab shows the list.", clear_history: "Clear local history", history_cleared: "Local history cleared",
   about: "About RustTerm", check_update: "Check for Updates…", settings: "Settings…", quit_app: "Quit RustTerm",
   menu_file: "File", menu_edit: "Edit", menu_view: "View", menu_window: "Window", menu_help: "Help",
   new_host: "New Host…", new_folder: "New Folder", import_hosts: "Import Hosts…", export_hosts: "Export Hosts…",
@@ -121,6 +123,7 @@ const en = {
 };
 
 const es = {
+  suggestions: "Sugerencias de comandos", sugg_hint: "A partir del historial del servidor y el tuyo. → acepta, ⌥/Alt+→ una palabra, ⇧Tab muestra la lista.", clear_history: "Borrar historial local", history_cleared: "Historial local borrado",
   about: "Acerca de RustTerm", check_update: "Buscar actualizaciones…", settings: "Ajustes…", quit_app: "Salir de RustTerm",
   menu_file: "Archivo", menu_edit: "Edición", menu_view: "Visualización", menu_window: "Ventana", menu_help: "Ayuda",
   new_host: "Nuevo host…", new_folder: "Nueva carpeta", import_hosts: "Importar hosts…", export_hosts: "Exportar hosts…",
@@ -175,6 +178,7 @@ const es = {
 };
 
 const de = {
+  suggestions: "Befehlsvorschläge", sugg_hint: "Aus dem Verlauf des Servers und deinem. → übernimmt, ⌥/Alt+→ ein Wort, ⇧Tab zeigt die Liste.", clear_history: "Lokalen Verlauf löschen", history_cleared: "Lokaler Verlauf gelöscht",
   about: "Über RustTerm", check_update: "Nach Updates suchen…", settings: "Einstellungen…", quit_app: "RustTerm beenden",
   menu_file: "Ablage", menu_edit: "Bearbeiten", menu_view: "Darstellung", menu_window: "Fenster", menu_help: "Hilfe",
   new_host: "Neuer Host…", new_folder: "Neuer Ordner", import_hosts: "Hosts importieren…", export_hosts: "Hosts exportieren…",
