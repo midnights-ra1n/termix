@@ -1,6 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { listen } from "@tauri-apps/api/event";
+import { Menu } from "@tauri-apps/api/menu";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { S, h, icon, invoke, modal, field, toast, isMac } from "./ui.js";
 import { THEMES, resolveTheme, applyTheme, xtermTheme } from "./themes.js";
@@ -90,6 +91,17 @@ addEventListener("keydown", (e) => {
   }
 }, true);
 
+// ---------- context menu ----------
+// Replace the webview menu (Reload / Inspect Element) everywhere; text fields get a native edit menu.
+addEventListener("contextmenu", async (e) => {
+  if (e.defaultPrevented) return; // a component already showed its own menu
+  e.preventDefault();
+  const el = e.target.closest?.("input, textarea");
+  if (!el || el.type === "checkbox") return;
+  const m = await Menu.new({ items: [{ item: "Cut" }, { item: "Copy" }, { item: "Paste" }, { item: "Separator" }, { item: "SelectAll" }] });
+  m.popup();
+});
+
 // ---------- layout / theme / language ----------
 
 function setLayout(key, value) {
@@ -157,6 +169,8 @@ async function openSettings(section = "general") {
     tray_icon: sw(s.behavior.tray_icon),
     run_in_background: sw(s.behavior.run_in_background),
     check_updates: sw(s.behavior.check_updates),
+    tray_hosts: sel(s.behavior.tray_hosts, [["favorites", t("tray_fav")], ["recent", t("tray_recent")], ["all", t("tray_all")]]),
+    tray_count: sel(String(s.behavior.tray_count), [...new Set(["3", "5", "8", "10", "15", "20", String(s.behavior.tray_count)])].map((v) => [v, v])),
     update_channel: sel(s.behavior.update_channel, [["stable", t("ch_stable")], ["beta", t("ch_beta")], ["nightly", t("ch_nightly")]]),
     agent_socket: h("input", { value: s.ssh.agent_socket, placeholder: t("agent_auto"), list: "agents" }),
     keepalive: num(s.ssh.keepalive_secs, 0, 600),
@@ -194,6 +208,7 @@ async function openSettings(section = "general") {
   const row = (label, input, hint) => h("label.toggle", {}, h("span", {}, label, hint && h("small", {}, hint)), input);
   const pages = {
     general: [t("set_general"), h("div.form-grid", {}, field(t("language"), f.language), field(t("channel"), f.update_channel)),
+      h("div.form-grid", {}, field(t("tray_hosts"), f.tray_hosts), field(t("tray_count"), f.tray_count)),
       h("div.toggles", {},
         row(isMac() ? t("tray_mac") : t("tray_other"), f.tray_icon),
         row(t("background"), f.run_in_background),
@@ -235,7 +250,7 @@ async function openSettings(section = "general") {
   const n = (el, d) => (el.value !== "" && Number.isFinite(+el.value) ? +el.value : d);
   Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.value, ui_font_size: n(f.ui_font_size, 13) });
   Object.assign(s.terminal, { font_family: f.font_family.value, font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked });
-  Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value });
+  Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
   Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30) });
   s.keybindings = kb;
   const langChanged = s.appearance.language !== S.settings.appearance.language;

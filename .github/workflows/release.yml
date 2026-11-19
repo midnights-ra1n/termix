@@ -1,8 +1,8 @@
-# One workflow for the three release channels:
-#   stable  -> push on `stable`  -> release v<version> (GitHub "latest", used by the stable updater)
-#   beta    -> push on `beta`    -> rolling prerelease tagged `beta`
-#   nightly -> every day + push on `nightly` -> rolling prerelease tagged `nightly`
-# Needs secrets TAURI_SIGNING_PRIVATE_KEY (+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD if any).
+# Release channels:
+#   stable  -> push on `stable`                 -> release v<version> (GitHub "latest", used by the stable updater)
+#   beta    -> push on `beta`                   -> rolling prerelease tagged `beta`
+#   nightly -> push on `nightly` + every night  -> rolling prerelease tagged `nightly`
+# Secret required: TAURI_SIGNING_PRIVATE_KEY (+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD if the key has one).
 name: Release
 on:
   push:
@@ -15,17 +15,18 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
-  meta:
+  prepare:
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.m.outputs.channel }}
       version: ${{ steps.m.outputs.version }}
       tag: ${{ steps.m.outputs.tag }}
-      ref: ${{ steps.m.outputs.ref }}
+      sha: ${{ steps.m.outputs.sha }}
+      release_id: ${{ steps.r.outputs.id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,66 +35,104 @@ jobs:
       - id: m
         shell: bash
         run: |
-          channel=${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }}
+          channel="${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }}"
           base=$(jq -r .version src-tauri/tauri.conf.json)
           case "$channel" in
-            stable) version=$base; tag=v$base ;;
-            beta)   version=$base-beta.${{ github.run_number }}; tag=beta ;;
-            nightly)
-              # Skip the daily build when nothing landed in the last 24 h.
+            stable)  version="$base"; tag="v$base" ;;
+            beta)    version="$base-beta.${{ github.run_number }}"; tag=beta ;;
+            nightly) version="$base-nightly.$(date -u +%Y%m%d%H%M)"; tag=nightly
+              # The nightly cron only builds when something landed in the last 24 h.
               if [ "${{ github.event_name }}" = schedule ] && [ -z "$(git log --since='24 hours ago' --format=%H -1)" ]; then
-                echo "No new commits"; channel=skip
-              fi
-              version=$base-nightly.$(date -u +%Y%m%d%H%M); tag=nightly ;;
+                echo "No new commits since yesterday"; channel=skip
+              fi ;;
             *) channel=skip ;;
           esac
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Reset rolling prerelease
-        if: steps.m.outputs.channel == 'beta' || steps.m.outputs.channel == 'nightly'
+          {
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+      - id: r
+        if: steps.m.outputs.channel != 'skip'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release delete "${{ steps.m.outputs.tag }}" --cleanup-tag --yes -R "$GITHUB_REPOSITORY" || true
+          TAG: ${{ steps.m.outputs.tag }}
+          CHANNEL: ${{ steps.m.outputs.channel }}
+          VERSION: ${{ steps.m.outputs.version }}
+          SHA: ${{ steps.m.outputs.sha }}
+        shell: bash
+        run: |
+          if [ "$CHANNEL" != stable ]; then
+            # Rolling prerelease: replace it so the tag points at the new commit.
+            gh release delete "$TAG" --cleanup-tag --yes || true
+            git push origin ":refs/tags/$TAG" 2>/dev/null || true
+            flags=(--prerelease)
+          else
+            flags=(--latest)
+          fi
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$SHA" --title "RustTerm $VERSION" \
+              --notes "Canal $CHANNEL — commit $SHA" "${flags[@]}"
+          fi
+          echo "id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .id)" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: meta
-    if: needs.meta.outputs.channel != 'skip'
+    needs: prepare
+    if: needs.prepare.outputs.channel != 'skip'
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-latest
-            args: --target aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles app,dmg
           - os: macos-latest
-            args: --target x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles app,dmg
           - os: ubuntu-22.04
-            args: ""
+            args: --bundles deb,appimage
+          # NSIS only: MSI (WiX) rejects non-numeric prerelease versions like 0.1.0-nightly.N
           - os: windows-latest
-            args: ""
+            args: --bundles nsis
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.meta.outputs.ref }}
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: ./.github/actions/setup
       - name: Set version
         shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          v='${{ needs.meta.outputs.version }}'
-          jq --arg v "$v" '.version = $v' src-tauri/tauri.conf.json > t.json && mv t.json src-tauri/tauri.conf.json
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tauri.conf.tmp
+          mv tauri.conf.tmp src-tauri/tauri.conf.json
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ needs.meta.outputs.tag }}
-          releaseName: RustTerm ${{ needs.meta.outputs.version }}
-          releaseBody: "Canal ${{ needs.meta.outputs.channel }} — commit ${{ needs.meta.outputs.ref }}"
-          releaseCommitish: ${{ needs.meta.outputs.ref }}
-          prerelease: ${{ needs.meta.outputs.channel != 'stable' }}
-          releaseDraft: false
-          updaterJsonPreferNsis: true
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          uploadUpdaterJson: false
           args: ${{ matrix.args }}
+
+  # One job writes latest.json once every platform is uploaded (parallel jobs would overwrite each other).
+  updater:
+    needs: [prepare, build]
+    if: always() && needs.prepare.outputs.channel != 'skip' && needs.build.result != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+        shell: bash
+        run: |
+          mkdir assets
+          gh release download "$TAG" -D assets -p '*.sig'
+          node scripts/updater-json.mjs "$VERSION" "RustTerm $VERSION ($CHANNEL)" assets "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          gh release upload "$TAG" assets/latest.json --clobber

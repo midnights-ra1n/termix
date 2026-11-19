@@ -2,6 +2,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Channel } from "@tauri-apps/api/core";
+import { Menu } from "@tauri-apps/api/menu";
 import { listen } from "@tauri-apps/api/event";
 import { S, h, icon, invoke, modal, field, toast, statusDot } from "./ui.js";
 import { t as tr } from "./i18n.js";
@@ -18,6 +19,7 @@ export const events = new EventTarget(); // "focus" when the focused pane/sessio
 class Pane {
   constructor() {
     this.el = h("div.pane", { onmousedown: () => focusPane(this) });
+    this.el.addEventListener("contextmenu", (e) => { if (e.target.closest("input")) return; e.preventDefault(); this.contextMenu(); });
     // Drop a host from the sidebar onto a pane: connect there (or in a new tab if it is busy).
     this.el.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); this.el.classList.add("drop"); } });
     this.el.addEventListener("dragleave", (e) => { if (!this.el.contains(e.relatedTarget)) this.el.classList.remove("drop"); });
@@ -119,6 +121,24 @@ class Pane {
     const t = this.term;
     const sub = t?.onKey(({ domEvent }) => { if (domEvent.key === "Enter") { sub.dispose(); this.dispose(); this.connect(this.host); } });
     events.dispatchEvent(new Event("focus"));
+  }
+  async contextMenu() {
+    const term = this.term;
+    focusPane(this);
+    const items = term ? [
+      { id: "c", text: tr("ctx_copy"), enabled: term.hasSelection(), action: () => navigator.clipboard.writeText(term.getSelection()) },
+      { item: "Paste" }, // native paste into xterm's textarea: no clipboard permission prompt
+      { id: "a", text: tr("ctx_select_all"), action: () => term.selectAll() },
+      { id: "x", text: tr("ctx_clear"), action: () => term.clear() },
+      { item: "Separator" },
+    ] : [];
+    const m = await Menu.new({ items: [...items,
+      { id: "r", text: tr("split_right"), action: () => split("right") },
+      { id: "d", text: tr("split_down"), action: () => split("down") },
+      { item: "Separator" },
+      { id: "w", text: tr("close_pane"), action: () => closePane() },
+    ] });
+    m.popup();
   }
   refit() {
     if (!this.fit || !this.el.isConnected) return;

@@ -56,6 +56,10 @@ pub struct Behavior {
     pub check_updates: bool,
     /// stable | beta | nightly
     pub update_channel: String,
+    /// Hosts listed in the tray menu: favorites | recent | all
+    pub tray_hosts: String,
+    /// How many hosts the tray menu shows.
+    pub tray_count: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -99,7 +103,7 @@ impl Default for Terminal {
 }
 impl Default for Behavior {
     fn default() -> Self {
-        Self { tray_icon: true, run_in_background: true, check_updates: true, update_channel: "stable".into() }
+        Self { tray_icon: true, run_in_background: true, check_updates: true, update_channel: "stable".into(), tray_hosts: "favorites".into(), tray_count: 5 }
     }
 }
 
@@ -207,6 +211,38 @@ impl HostsDoc {
     }
 }
 
+/// Most recently connected host ids, newest first (recent.json).
+pub fn recent_load() -> Vec<String> {
+    std::fs::read_to_string(dir().join("recent.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+pub fn recent_push(id: &str) {
+    let mut v = recent_load();
+    v.retain(|x| x != id);
+    v.insert(0, id.to_string());
+    v.truncate(30);
+    if let Ok(json) = serde_json::to_vec(&v) {
+        let _ = write_atomic(&dir().join("recent.json"), &json);
+    }
+}
+
+/// Hosts for the tray menu according to the user's choice; favorites fall back to recent, then to all.
+pub fn tray_hosts<'a>(doc: &'a HostsDoc, mode: &str, count: usize, recent: &[String]) -> Vec<&'a Host> {
+    let by_recent = || recent.iter().filter_map(|id| doc.hosts.iter().find(|h| &h.id == id)).collect::<Vec<_>>();
+    let mut v: Vec<&Host> = match mode {
+        "recent" => by_recent(),
+        "all" => doc.hosts.iter().collect(),
+        _ => doc.hosts.iter().filter(|h| h.favorite).collect(),
+    };
+    if v.is_empty() && mode != "all" {
+        v = by_recent();
+    }
+    if v.is_empty() {
+        v = doc.hosts.iter().collect();
+    }
+    v.truncate(count.max(1));
+    v
+}
+
 fn entry(id: &str) -> keyring::Result<keyring::Entry> {
     keyring::Entry::new("rustterm", id)
 }
@@ -234,6 +270,25 @@ mod tests {
         assert_eq!(s.terminal.font_size, 16);
         assert_eq!(s.terminal.scrollback, 10000);
         assert_eq!(s.appearance.theme, "midnights");
+    }
+}
+
+#[cfg(test)]
+mod tray_tests {
+    use super::*;
+    fn h(id: &str, fav: bool) -> Host {
+        Host { id: id.into(), name: id.into(), favorite: fav, ..Default::default() }
+    }
+    #[test]
+    fn tray_selection() {
+        let doc = HostsDoc { folders: vec![], hosts: vec![h("a", false), h("b", true), h("c", false)] };
+        let ids = |v: Vec<&Host>| v.iter().map(|h| h.id.clone()).collect::<Vec<_>>();
+        let recent = vec!["c".to_string(), "a".to_string()];
+        assert_eq!(ids(tray_hosts(&doc, "favorites", 5, &recent)), ["b"]);
+        assert_eq!(ids(tray_hosts(&doc, "recent", 1, &recent)), ["c"]);
+        assert_eq!(ids(tray_hosts(&doc, "all", 2, &recent)), ["a", "b"]);
+        let nofav = HostsDoc { folders: vec![], hosts: vec![h("a", false)] };
+        assert_eq!(ids(tray_hosts(&nofav, "favorites", 5, &[])), ["a"]);
     }
 }
 

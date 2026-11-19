@@ -64,6 +64,7 @@ fn save_settings(app: AppHandle, st: State<AppState>, settings: Settings) -> R<(
     if let Some(t) = app.tray_by_id("main") {
         let _ = t.set_visible(settings.behavior.tray_icon);
     }
+    refresh_tray(&app, &HostsDoc::load());
     #[cfg(target_os = "macos")]
     app.set_menu(build_menu(&app, &settings).map_err(e)?).map_err(e)?;
     Ok(())
@@ -193,6 +194,8 @@ async fn ssh_connect(
     .await
     .map_err(e)?;
     st.sessions.lock().await.insert(id.clone(), sess);
+    config::recent_push(&host_id);
+    refresh_tray(&app, &HostsDoc::load());
     Ok(id)
 }
 
@@ -388,15 +391,23 @@ fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> 
 
 /// Tray menu = favourite hosts (or the first ones). Kept icon-only so it stays small next to the MacBook notch.
 fn tray_menu(app: &AppHandle, doc: &HostsDoc) -> tauri::Result<Menu<tauri::Wry>> {
-    let mut hosts: Vec<_> = doc.hosts.iter().filter(|h| h.favorite).collect();
-    if hosts.is_empty() {
-        hosts = doc.hosts.iter().collect();
-    }
+    let (mode, count) = {
+        let s = app.state::<AppState>().settings.lock().unwrap().behavior.clone();
+        (s.tray_hosts, s.tray_count)
+    };
+    let hosts = config::tray_hosts(doc, &mode, count, &config::recent_load());
     let status = app.state::<AppState>().status.lock().unwrap().clone();
     let mut b = MenuBuilder::new(app);
-    for h in hosts.iter().take(12) {
+    for h in &hosts {
         let st = status.get(&h.id).map(|s| s.as_str()).unwrap_or("");
-        b = b.item(&IconMenuItem::with_id(app, format!("host:{}", h.id), &h.name, true, Some(probe::dot(st)), None::<&str>)?);
+        let label = if h.name == h.host || h.name.is_empty() { h.host.clone() } else { format!("{}  —  {}", h.name, h.host) };
+        // GTK app-indicator menus often hide item images, so Linux gets a coloured emoji instead.
+        if cfg!(target_os = "linux") {
+            let dot = match st { "up" => "🟢", "ping" => "🟡", "down" => "🔴", _ => "⚪" };
+            b = b.item(&MenuItem::with_id(app, format!("host:{}", h.id), format!("{dot}  {label}"), true, None::<&str>)?);
+        } else {
+            b = b.item(&IconMenuItem::with_id(app, format!("host:{}", h.id), label, true, Some(probe::dot(st)), None::<&str>)?);
+        }
     }
     if hosts.is_empty() {
         b = b.item(&MenuItem::with_id(app, "noop", lbl(app, "no_hosts", "Aucun hôte"), false, None::<&str>)?);

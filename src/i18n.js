@@ -4,6 +4,8 @@
 export const LANGS = { fr: "Français", en: "English", es: "Español", de: "Deutsch" };
 
 const fr = {
+  tray_hosts: "Hôtes affichés dans le menu", tray_fav: "Favoris", tray_recent: "Connexions récentes", tray_all: "Tous les hôtes", tray_count: "Nombre d'hôtes",
+  ctx_copy: "Copier", ctx_paste: "Coller", ctx_select_all: "Tout sélectionner", ctx_clear: "Effacer l'écran",
   suggestions: "Suggestions de commandes", sugg_hint: "D'après l'historique du serveur et le vôtre. → accepte, ⌥/Alt+→ un mot, ⇧Tab affiche la liste.", clear_history: "Effacer l'historique local", history_cleared: "Historique local effacé",
   // native menus / tray
   about: "À propos de RustTerm", check_update: "Rechercher des mises à jour…", settings: "Réglages…", quit_app: "Quitter RustTerm",
@@ -68,6 +70,8 @@ const fr = {
 };
 
 const en = {
+  tray_hosts: "Hosts shown in the menu", tray_fav: "Favorites", tray_recent: "Recent connections", tray_all: "All hosts", tray_count: "Number of hosts",
+  ctx_copy: "Copy", ctx_paste: "Paste", ctx_select_all: "Select All", ctx_clear: "Clear Screen",
   suggestions: "Command suggestions", sugg_hint: "From the server's history and yours. → accepts, ⌥/Alt+→ one word, ⇧Tab shows the list.", clear_history: "Clear local history", history_cleared: "Local history cleared",
   about: "About RustTerm", check_update: "Check for Updates…", settings: "Settings…", quit_app: "Quit RustTerm",
   menu_file: "File", menu_edit: "Edit", menu_view: "View", menu_window: "Window", menu_help: "Help",
@@ -123,6 +127,8 @@ const en = {
 };
 
 const es = {
+  tray_hosts: "Hosts en el menú", tray_fav: "Favoritos", tray_recent: "Conexiones recientes", tray_all: "Todos los hosts", tray_count: "Número de hosts",
+  ctx_copy: "Copiar", ctx_paste: "Pegar", ctx_select_all: "Seleccionar todo", ctx_clear: "Limpiar pantalla",
   suggestions: "Sugerencias de comandos", sugg_hint: "A partir del historial del servidor y el tuyo. → acepta, ⌥/Alt+→ una palabra, ⇧Tab muestra la lista.", clear_history: "Borrar historial local", history_cleared: "Historial local borrado",
   about: "Acerca de RustTerm", check_update: "Buscar actualizaciones…", settings: "Ajustes…", quit_app: "Salir de RustTerm",
   menu_file: "Archivo", menu_edit: "Edición", menu_view: "Visualización", menu_window: "Ventana", menu_help: "Ayuda",
@@ -178,6 +184,8 @@ const es = {
 };
 
 const de = {
+  tray_hosts: "Hosts im Menü", tray_fav: "Favoriten", tray_recent: "Letzte Verbindungen", tray_all: "Alle Hosts", tray_count: "Anzahl der Hosts",
+  ctx_copy: "Kopieren", ctx_paste: "Einsetzen", ctx_select_all: "Alles auswählen", ctx_clear: "Bildschirm leeren",
   suggestions: "Befehlsvorschläge", sugg_hint: "Aus dem Verlauf des Servers und deinem. → übernimmt, ⌥/Alt+→ ein Wort, ⇧Tab zeigt die Liste.", clear_history: "Lokalen Verlauf löschen", history_cleared: "Lokaler Verlauf gelöscht",
   about: "Über RustTerm", check_update: "Nach Updates suchen…", settings: "Einstellungen…", quit_app: "RustTerm beenden",
   menu_file: "Ablage", menu_edit: "Bearbeiten", menu_view: "Darstellung", menu_window: "Fenster", menu_help: "Hilfe",
