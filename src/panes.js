@@ -72,7 +72,8 @@ class Pane {
       }
       return true;
     });
-    this.ro = new ResizeObserver(() => this.refit());
+    // Defer to the next frame: fitting inside the observer callback resizes the box again and loops.
+    this.ro = new ResizeObserver(() => requestAnimationFrame(() => this.refit()));
     this.ro.observe(box);
     this.focusTarget = term;
     this.refit();
