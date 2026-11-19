@@ -19,10 +19,19 @@
         "minWidth": 720,
         "minHeight": 420,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "visible": false,
+        "backgroundColor": "#0B1130",
+        "dragDropEnabled": false,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 22
+        }
       }
     ],
-    "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
   },
   "bundle": {
     "active": true,
@@ -30,18 +39,37 @@
     "createUpdaterArtifacts": true,
     "category": "DeveloperTool",
     "shortDescription": "Terminal SSH léger et personnalisable",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "linux": {
-      "deb": { "desktopTemplate": "linux.desktop", "depends": ["libayatana-appindicator3-1"] },
-      "rpm": { "desktopTemplate": "linux.desktop" },
-      "appimage": { "bundleMediaFramework": false }
+      "deb": {
+        "desktopTemplate": "linux.desktop",
+        "depends": [
+          "libayatana-appindicator3-1"
+        ]
+      },
+      "rpm": {
+        "desktopTemplate": "linux.desktop"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
     }
   },
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJEOEM0ODlGMEUxNjhBQTMKUldTamloWU9uMGlNdlgyWGJVeHBwd2IwYUdHdkd1R0JmMlVBSDA0ckl2YlA0OXpYQ3NWdVpXWSsK",
-      "endpoints": ["https://github.com/midnights-ra1n/RustTerm/releases/latest/download/latest.json"],
-      "windows": { "installMode": "passive" }
+      "endpoints": [
+        "https://github.com/midnights-ra1n/RustTerm/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

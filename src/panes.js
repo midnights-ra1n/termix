@@ -3,7 +3,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { S, h, icon, invoke, modal, field, toast } from "./ui.js";
+import { S, h, icon, invoke, modal, field, toast, statusDot } from "./ui.js";
+import { t as tr } from "./i18n.js";
 
 // Layout tree per tab: { split: "h"|"v", ratio, a, b } | Pane
 const tabs = [];
@@ -16,6 +17,17 @@ export const events = new EventTarget(); // "focus" when the focused pane/sessio
 class Pane {
   constructor() {
     this.el = h("div.pane", { onmousedown: () => focusPane(this) });
+    // Drop a host from the sidebar onto a pane: connect there (or in a new tab if it is busy).
+    this.el.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); this.el.classList.add("drop"); } });
+    this.el.addEventListener("dragleave", (e) => { if (!this.el.contains(e.relatedTarget)) this.el.classList.remove("drop"); });
+    this.el.addEventListener("drop", (e) => {
+      this.el.classList.remove("drop");
+      const [kind, id] = e.dataTransfer.getData("text/plain").split(":");
+      const host = kind === "host" && S.hosts.hosts.find((x) => x.id === id);
+      if (!host) return;
+      e.preventDefault();
+      if (this.term) newTab(host); else { focusPane(this); this.connect(host); }
+    });
     this.session = null;
     this.host = null;
     this.term = null;
@@ -23,21 +35,21 @@ class Pane {
   }
   picker() {
     const list = h("div.picker-list");
-    const input = h("input", { placeholder: "Rechercher un hôte…", "aria-label": "Rechercher un hôte" });
+    const input = h("input", { placeholder: tr("search_host"), "aria-label": tr("search_host") });
     const draw = () => {
       const q = input.value.toLowerCase();
       list.replaceChildren(...S.hosts.hosts.filter((x) => !q || (x.name + x.host + x.tags.join(" ")).toLowerCase().includes(q)).slice(0, 30)
-        .map((x) => h("button.row.host", { onclick: () => this.connect(x) }, icon(x.icon || "server"), h("span.name", {}, x.name), h("span.mute", {}, x.host))));
+        .map((x) => h("button.row.host", { onclick: () => this.connect(x) }, statusDot(x.id), icon(x.icon || "server", 15), h("span.name", {}, x.name), h("span.mute.mono", {}, x.host))));
     };
     input.oninput = draw;
     input.onkeydown = (e) => { if (e.key === "Enter") list.querySelector("button")?.click(); };
     draw();
-    this.el.replaceChildren(h("div.picker", {}, h("h3", {}, "Ouvrir une connexion"), input, list));
+    this.el.replaceChildren(h("div.picker", {}, h("h3", {}, tr("open_conn")), input, list));
     this.focusTarget = input;
   }
   async connect(host, password = null) {
     this.host = host;
-    this.el.replaceChildren(h("div.connecting", { role: "status" }, h("span.dot"), `Connexion à ${host.name}…`));
+    this.el.replaceChildren(h("div.connecting", { role: "status" }, h("span.dot"), tr("connecting", host.name)));
     const t = S.settings.terminal;
     const term = new Terminal({
       fontFamily: t.font_family, fontSize: t.font_size + zoom, lineHeight: t.line_height, cursorStyle: t.cursor_style,
@@ -83,22 +95,22 @@ class Pane {
   async askPassword(host) {
     const pw = h("input", { type: "password", autofocus: true, autocomplete: "off" });
     const remember = h("input", { type: "checkbox" });
-    const ok = await modal(`Mot de passe pour ${host.user || ""}@${host.host}`, (close) =>
-      h("form", { onsubmit: (e) => { e.preventDefault(); close(true); } }, field("Mot de passe", pw),
-        h("label.check", {}, remember, "Mémoriser dans le trousseau du système"),
-        h("footer", {}, h("button.btn", { type: "button", onclick: () => close(false) }, "Annuler"), h("button.btn.primary", { type: "submit" }, "Se connecter"))));
+    const ok = await modal(tr("pw_for", `${host.user || ""}@${host.host}`), (close) =>
+      h("form", { onsubmit: (e) => { e.preventDefault(); close(true); } }, field(tr("f_password"), pw),
+        h("label.check", {}, remember, tr("remember")),
+        h("footer", {}, h("button.btn", { type: "button", onclick: () => close(false) }, tr("cancel")), h("button.btn.primary", { type: "submit" }, tr("connect")))));
     if (!ok) return this.picker();
     if (remember.checked) await invoke("set_secret", { id: host.id, value: pw.value }).catch((e) => toast(String(e), "error"));
     this.connect(host, pw.value);
   }
   failed(host, msg) {
-    this.el.replaceChildren(h("div.picker", {}, h("h3.error", {}, `Échec : ${host.name}`), h("p.mute", {}, msg),
-      h("div.inline", {}, h("button.btn.primary", { onclick: () => this.connect(host) }, "Réessayer"), h("button.btn", { onclick: () => this.picker() }, "Autre hôte"))));
+    this.el.replaceChildren(h("div.picker", {}, h("h3.error", {}, tr("failed", host.name)), h("p.mute", {}, msg),
+      h("div.inline", {}, h("button.btn.primary", { onclick: () => this.connect(host) }, tr("retry")), h("button.btn", { onclick: () => this.picker() }, tr("other_host")))));
   }
   closed() {
     bySession.delete(this.session);
     this.session = null;
-    this.term?.write("\r\n\x1b[2m[connexion fermée — Entrée pour se reconnecter]\x1b[0m\r\n");
+    this.term?.write(`\r\n\x1b[2m${tr("conn_closed")}\x1b[0m\r\n`);
     const t = this.term;
     const sub = t?.onKey(({ domEvent }) => { if (domEvent.key === "Enter") { sub.dispose(); this.dispose(); this.connect(this.host); } });
     events.dispatchEvent(new Event("focus"));
@@ -143,18 +155,29 @@ function render() {
   const strip = document.getElementById("tabs");
   strip.replaceChildren(...tabs.map((t, i) => h("div.tab" + (t === current ? ".on" : ""), { role: "tab", "aria-selected": String(t === current) },
     h("button.tab-label", { onclick: () => selectTab(t), onauxclick: (e) => e.button === 1 && closeTab(t) }, t.title()),
-    h("button.icon-btn", { "aria-label": "Fermer l'onglet " + (i + 1), onclick: () => closeTab(t) }, icon("close", 12)))),
-    h("button.icon-btn.new-tab", { "aria-label": "Nouvel onglet", title: "Nouvel onglet", onclick: () => newTab() }, icon("plus", 14)));
+    h("button.icon-btn", { "aria-label": `${tr("close_tab")} ${i + 1}`, onclick: () => closeTab(t) }, icon("close", 12)))),
+    h("button.icon-btn.new-tab", { "aria-label": tr("new_tab"), title: tr("new_tab"), onclick: () => newTab() }, icon("plus", 14)));
   const area = document.getElementById("panes");
-  area.replaceChildren(current ? renderNode(current.root) : h("div.welcome", {}, h("h1", {}, "RUSTTERM", h("span.dot-end", {}, ".")), h("p", {}, "Choisissez un hôte dans la barre latérale.")));
+  area.replaceChildren(current ? renderNode(current.root) : welcome());
   current && leaves(current.root).forEach((p) => p.el.classList.toggle("focused", p === current.focused));
 }
 
 function updateTabTitles() { render(); }
 
+function welcome() {
+  const el = h("div.welcome", {}, h("h1", {}, "RUSTTERM", h("span.dot-end", {}, ".")), h("p", {}, tr("welcome")));
+  el.addEventListener("dragover", (e) => e.dataTransfer.types.includes("text/plain") && e.preventDefault());
+  el.addEventListener("drop", (e) => {
+    const [kind, id] = e.dataTransfer.getData("text/plain").split(":");
+    const host = kind === "host" && S.hosts.hosts.find((x) => x.id === id);
+    if (host) { e.preventDefault(); newTab(host); }
+  });
+  return el;
+}
+
 export function newTab(host = null) {
   const p = new Pane();
-  const tab = { root: p, focused: p, title() { const l = leaves(this.root); const n = l[0].host?.name || "Nouvel onglet"; return l.length > 1 ? `${n} +${l.length - 1}` : n; } };
+  const tab = { root: p, focused: p, title() { const l = leaves(this.root); const n = l[0].host?.name || tr("new_tab"); return l.length > 1 ? `${n} +${l.length - 1}` : n; } };
   tabs.push(tab);
   selectTab(tab);
   if (host) p.connect(host);
@@ -188,10 +211,17 @@ export function focusPane(p) {
 export const focused = () => current?.focused || null;
 
 /** Open a host: in the focused pane if it's empty, else a new tab. */
-export function openHost(host, forceTab = false) {
+export function openHost(host) {
   const p = focused();
-  if (!forceTab && p && !p.session && !p.term) return p.connect(host);
+  if (p && !p.session && !p.term) return p.connect(host);
   newTab(host);
+}
+
+/** Session to show in the side panel: focused pane first, else any live pane of the tab. */
+export function activeSession() {
+  if (!current) return null;
+  if (current.focused?.session) return current.focused;
+  return leaves(current.root).find((p) => p.session) || null;
 }
 
 export function split(dir) {

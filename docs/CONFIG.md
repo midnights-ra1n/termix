@@ -22,6 +22,7 @@ Les clés absentes du fichier gardent leur valeur par défaut ; un fichier inval
 
 ```toml
 [appearance]
+language = "auto"            # auto (langue du système), fr, en, es, de
 theme = "midnights"          # midnights, aube, nord, dracula, solarized, gruvbox, system, ou un thème perso
 ui_font = "Geist, system-ui, sans-serif"
 ui_font_size = 13
@@ -100,3 +101,13 @@ Copier/coller : `Cmd+C`/`Cmd+V` sur macOS, `Ctrl+Shift+C`/`Ctrl+Shift+V` ailleur
 
 Clés d'un thème : `bg scene vide indigo brume ink mute faint accent accent2 success error warn onAccent cursor selection`, plus la palette ANSI `black red green yellow blue magenta cyan white` et leurs variantes `brightBlack` … `brightWhite`. `dark = false` pour un thème clair.
 Le thème `system` suit le mode clair/sombre et la couleur d'accent du système.
+
+## Statut des hôtes
+
+Toutes les 30 s (et à chaque modification des hôtes), RustTerm vérifie chaque hôte :
+
+- **vert** : le port SSH répond avec une bannière `SSH-` ;
+- **jaune** : l'hôte répond au ping mais pas le SSH ;
+- **rouge** : ni ping ni SSH.
+
+Le statut s'affiche dans la liste des hôtes et dans le menu de la barre des menus / zone de notification. Le ping utilise la commande `ping` du système : un hôte qui bloque l'ICMP mais dont le SSH répond reste vert.

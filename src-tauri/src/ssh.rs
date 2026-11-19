@@ -265,7 +265,8 @@ pub async fn exec(handle: &Handle<Client>, cmd: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out).into_owned())
 }
 
-pub const STATS_CMD: &str = "head -1 /proc/stat; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; df -Pk / | tail -1; cat /proc/loadavg; tail -n +3 /proc/net/dev";
+/// Run through `sh` so it works whatever the remote login shell is (fish…).
+pub const STATS_CMD: &str = r#"sh -c 'head -1 /proc/stat; grep -E "^(MemTotal|MemAvailable):" /proc/meminfo; df -Pk / | tail -1; cat /proc/loadavg; tail -n +3 /proc/net/dev; echo "HOST $(cat /proc/sys/kernel/hostname 2>/dev/null || hostname)"; grep -E "^(ID|PRETTY_NAME)=" /etc/os-release 2>/dev/null; echo "KERNEL $(uname -sr)"; echo "UPTIME $(cut -d" " -f1 /proc/uptime 2>/dev/null)"' 2>/dev/null"#;
 
 #[derive(Serialize, Default, Debug, PartialEq)]
 pub struct Stats {
@@ -278,6 +279,11 @@ pub struct Stats {
     pub load: [f64; 3],
     pub net_rx: u64,
     pub net_tx: u64,
+    pub hostname: String,
+    pub os_id: String,
+    pub os_name: String,
+    pub kernel: String,
+    pub uptime_secs: u64,
 }
 
 /// Raw counters; the UI diffs two samples for CPU % and network rates.
@@ -287,6 +293,27 @@ pub fn parse_stats(s: &str) -> Stats {
     for line in s.lines() {
         let f: Vec<&str> = line.split_whitespace().collect();
         let n = |i: usize| f.get(i).and_then(|x| x.parse::<u64>().ok()).unwrap_or(0);
+        let rest = |p: &str| line.strip_prefix(p).map(|v| v.trim().trim_matches('"').to_string());
+        if let Some(v) = rest("HOST ") {
+            st.hostname = v;
+            continue;
+        }
+        if let Some(v) = rest("ID=") {
+            st.os_id = v;
+            continue;
+        }
+        if let Some(v) = rest("PRETTY_NAME=") {
+            st.os_name = v;
+            continue;
+        }
+        if let Some(v) = rest("KERNEL ") {
+            st.kernel = v;
+            continue;
+        }
+        if let Some(v) = rest("UPTIME ") {
+            st.uptime_secs = v.split('.').next().and_then(|x| x.parse().ok()).unwrap_or(0);
+            continue;
+        }
         match f.first().copied() {
             Some("cpu") => {
                 let v: Vec<u64> = f[1..].iter().filter_map(|x| x.parse().ok()).collect();
@@ -385,12 +412,15 @@ mod tests {
     use super::*;
     #[test]
     fn parses_proc_output() {
-        let raw = "cpu  100 0 50 800 50 0 0 0 0 0\nMemTotal:  2000 kB\nMemAvailable: 500 kB\n/dev/sda1 1000 400 600 40% /\n0.10 0.20 0.30 1/100 42\n    lo: 5 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0\n  eth0: 1000 0 0 0 0 0 0 0 2000 0 0 0 0 0 0 0\n";
+        let raw = "cpu  100 0 50 800 50 0 0 0 0 0\nMemTotal:  2000 kB\nMemAvailable: 500 kB\n/dev/sda1 1000 400 600 40% /\n0.10 0.20 0.30 1/100 42\n    lo: 5 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0\n  eth0: 1000 0 0 0 0 0 0 0 2000 0 0 0 0 0 0 0\nHOST pve-31\nID=debian\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nKERNEL Linux 6.8.12\nUPTIME 3600.52 7000.1\n";
         let s = parse_stats(raw);
         assert_eq!((s.cpu_total, s.cpu_idle), (1000, 850));
         assert_eq!((s.mem_total_kb, s.mem_avail_kb), (2000, 500));
         assert_eq!((s.disk_total_kb, s.disk_used_kb), (1000, 400));
         assert_eq!(s.load, [0.1, 0.2, 0.3]);
         assert_eq!((s.net_rx, s.net_tx), (1000, 2000));
+        assert_eq!((s.hostname.as_str(), s.os_id.as_str()), ("pve-31", "debian"));
+        assert_eq!(s.os_name, "Debian GNU/Linux 12 (bookworm)");
+        assert_eq!((s.kernel.as_str(), s.uptime_secs), ("Linux 6.8.12", 3600));
     }
 }

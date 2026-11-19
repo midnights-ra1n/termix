@@ -2,7 +2,8 @@
 
 Terminal SSH léger et personnalisable : Rust (Tauri v2, russh) + xterm.js.
 
-- Hôtes en arborescence (dossiers, glisser-déposer), tags, recherche, favoris, icônes intégrées, import/export JSON
+- Hôtes en arborescence (dossiers et sous-dossiers, glisser-déposer), tags, recherche, favoris, icônes intégrées, statut en direct (SSH / ping / injoignable), import/export JSON
+- Interface en français, anglais, espagnol et allemand
 - Auth : agent SSH (Bitwarden, 1Password, KeePassXC, Proton Pass, Secretive… détecté via `~/.ssh/config` et votre shell), clé, mot de passe (trousseau du système)
 - Onglets et splits droite/gauche/haut/bas, raccourcis personnalisables par plateforme
 - Panneau latéral : SFTP (parcourir, envoyer, télécharger, créer, supprimer) et stats (CPU, mémoire, disque, réseau, load average)

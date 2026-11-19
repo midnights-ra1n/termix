@@ -1,10 +1,12 @@
 mod config;
+mod probe;
 mod ssh;
 
 use config::{HostsDoc, Settings};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::menu::{Menu, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{IconMenuItem, Menu, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
@@ -14,6 +16,16 @@ const REPO: &str = "midnights-ra1n/RustTerm";
 struct AppState {
     settings: Mutex<Settings>,
     sessions: ssh::Sessions,
+    /// Translated menu labels pushed by the UI (key -> text); French built-ins until then.
+    labels: Mutex<HashMap<String, String>>,
+    /// host id -> up | ping | down
+    status: Mutex<HashMap<String, String>>,
+    probe_now: tokio::sync::Notify,
+    shown: std::sync::atomic::AtomicBool,
+}
+
+fn lbl(app: &AppHandle, key: &str, fallback: &str) -> String {
+    app.state::<AppState>().labels.lock().unwrap().get(key).cloned().unwrap_or_else(|| fallback.to_string())
 }
 
 type R<T> = Result<T, String>;
@@ -28,6 +40,7 @@ struct Boot {
     settings: Settings,
     defaults: std::collections::BTreeMap<String, String>,
     platform: &'static str,
+    arch: &'static str,
     version: String,
     config_dir: String,
 }
@@ -38,6 +51,7 @@ fn boot(app: AppHandle, st: State<AppState>) -> Boot {
         settings: st.settings.lock().unwrap().clone(),
         defaults: config::default_keybindings(),
         platform: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
         version: app.package_info().version.to_string(),
         config_dir: config::dir().to_string_lossy().into(),
     }
@@ -64,7 +78,36 @@ fn get_hosts() -> HostsDoc {
 fn save_hosts(app: AppHandle, doc: HostsDoc) -> R<()> {
     doc.save().map_err(e)?;
     refresh_tray(&app, &doc);
+    app.state::<AppState>().probe_now.notify_one();
     Ok(())
+}
+
+/// Called by the UI once the first frame is painted: the window starts hidden so it never flashes white.
+#[tauri::command]
+fn app_ready(app: AppHandle) {
+    show_main(&app);
+}
+
+#[tauri::command]
+fn set_labels(app: AppHandle, st: State<AppState>, labels: HashMap<String, String>) -> R<()> {
+    *st.labels.lock().unwrap() = labels;
+    #[cfg(target_os = "macos")]
+    {
+        let s = st.settings.lock().unwrap().clone();
+        app.set_menu(build_menu(&app, &s).map_err(e)?).map_err(e)?;
+    }
+    refresh_tray(&app, &HostsDoc::load());
+    Ok(())
+}
+
+#[tauri::command]
+fn host_status(st: State<AppState>) -> HashMap<String, String> {
+    st.status.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn refresh_status(st: State<AppState>) {
+    st.probe_now.notify_one();
 }
 
 /// Backup: the hosts file only. Passwords stay in the OS keychain.
@@ -239,7 +282,23 @@ async fn install_update(app: AppHandle, channel: String) -> R<()> {
 
 // ---------- window / menu / tray ----------
 
+/// Probes every host every 30 s (or right away when hosts change), then updates UI + tray.
+fn spawn_prober(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let hosts = HostsDoc::load().hosts;
+            let map = probe::probe_all(&hosts).await;
+            *app.state::<AppState>().status.lock().unwrap() = map.clone();
+            let _ = app.emit("host-status", &map);
+            refresh_tray(&app, &HostsDoc::load());
+            let st = app.state::<AppState>();
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(30), st.probe_now.notified()).await;
+        }
+    });
+}
+
 fn show_main(app: &AppHandle) {
+    app.state::<AppState>().shown.store(true, std::sync::atomic::Ordering::Relaxed);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -250,12 +309,14 @@ fn show_main(app: &AppHandle) {
 /// Native macOS menu bar. Accelerators come from the user's keybindings so menus always show the real shortcut.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
+    let l = |id: &str, fallback: &str| lbl(app, id, fallback);
     let item = |id: &str, label: &str| {
-        MenuItem::with_id(app, id, label, true, s.keybindings.get(id).map(|k| k.as_str()).filter(|k| !k.is_empty()))
+        MenuItem::with_id(app, id, l(id, label), true, s.keybindings.get(id).map(|k| k.as_str()).filter(|k| !k.is_empty()))
     };
+    let plain = |id: &str, label: &str| MenuItem::with_id(app, id, l(id, label), true, None::<&str>);
     let app_menu = SubmenuBuilder::new(app, "RustTerm")
-        .item(&PredefinedMenuItem::about(app, Some("À propos de RustTerm"), None)?)
-        .item(&MenuItem::with_id(app, "check_update", "Rechercher des mises à jour…", true, None::<&str>)?)
+        .item(&plain("about", "À propos de RustTerm")?)
+        .item(&plain("check_update", "Rechercher des mises à jour…")?)
         .separator()
         .item(&item("settings", "Réglages…")?)
         .separator()
@@ -265,18 +326,18 @@ fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> 
         .item(&PredefinedMenuItem::hide_others(app, None)?)
         .item(&PredefinedMenuItem::show_all(app, None)?)
         .separator()
-        .item(&PredefinedMenuItem::quit(app, Some("Quitter RustTerm"))?)
+        .item(&PredefinedMenuItem::quit(app, Some(&l("quit_app", "Quitter RustTerm")))?)
         .build()?;
-    let file = SubmenuBuilder::new(app, "Fichier")
+    let file = SubmenuBuilder::new(app, l("menu_file", "Fichier"))
         .item(&item("new_host", "Nouvel hôte…")?)
-        .item(&MenuItem::with_id(app, "new_folder", "Nouveau dossier", true, None::<&str>)?)
+        .item(&plain("new_folder", "Nouveau dossier")?)
         .separator()
-        .item(&MenuItem::with_id(app, "import_hosts", "Importer des hôtes…", true, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "export_hosts", "Exporter les hôtes…", true, None::<&str>)?)
+        .item(&plain("import_hosts", "Importer des hôtes…")?)
+        .item(&plain("export_hosts", "Exporter les hôtes…")?)
         .separator()
         .item(&item("close_pane", "Fermer le panneau")?)
         .build()?;
-    let edit = SubmenuBuilder::new(app, "Édition")
+    let edit = SubmenuBuilder::new(app, l("menu_edit", "Édition"))
         .item(&PredefinedMenuItem::undo(app, None)?)
         .item(&PredefinedMenuItem::redo(app, None)?)
         .separator()
@@ -287,7 +348,7 @@ fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> 
         .separator()
         .item(&item("search_hosts", "Rechercher un hôte")?)
         .build()?;
-    let view = SubmenuBuilder::new(app, "Présentation")
+    let view = SubmenuBuilder::new(app, l("menu_view", "Présentation"))
         .item(&item("split_right", "Diviser à droite")?)
         .item(&item("split_left", "Diviser à gauche")?)
         .item(&item("split_down", "Diviser en bas")?)
@@ -307,14 +368,14 @@ fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> 
         .separator()
         .item(&PredefinedMenuItem::fullscreen(app, None)?)
         .build()?;
-    let window = SubmenuBuilder::new(app, "Fenêtre")
+    let window = SubmenuBuilder::new(app, l("menu_window", "Fenêtre"))
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .item(&PredefinedMenuItem::maximize(app, None)?)
         .separator()
         .item(&PredefinedMenuItem::close_window(app, None)?)
         .build()?;
-    let help = SubmenuBuilder::new(app, "Aide")
-        .item(&MenuItem::with_id(app, "open_docs", "Documentation de la configuration", true, None::<&str>)?)
+    let help = SubmenuBuilder::new(app, l("menu_help", "Aide"))
+        .item(&plain("open_docs", "Documentation de la configuration")?)
         .build()?;
     MenuBuilder::new(app).items(&[&app_menu, &file, &edit, &view, &window, &help]).build()
 }
@@ -325,16 +386,19 @@ fn tray_menu(app: &AppHandle, doc: &HostsDoc) -> tauri::Result<Menu<tauri::Wry>>
     if hosts.is_empty() {
         hosts = doc.hosts.iter().collect();
     }
+    let status = app.state::<AppState>().status.lock().unwrap().clone();
     let mut b = MenuBuilder::new(app);
     for h in hosts.iter().take(12) {
-        b = b.item(&MenuItem::with_id(app, format!("host:{}", h.id), &h.name, true, None::<&str>)?);
+        let st = status.get(&h.id).map(|s| s.as_str()).unwrap_or("");
+        b = b.item(&IconMenuItem::with_id(app, format!("host:{}", h.id), &h.name, true, Some(probe::dot(st)), None::<&str>)?);
     }
     if hosts.is_empty() {
-        b = b.item(&MenuItem::with_id(app, "noop", "Aucun hôte", false, None::<&str>)?);
+        b = b.item(&MenuItem::with_id(app, "noop", lbl(app, "no_hosts", "Aucun hôte"), false, None::<&str>)?);
     }
     b.separator()
-        .item(&MenuItem::with_id(app, "show", "Ouvrir RustTerm", true, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?)
+        .item(&MenuItem::with_id(app, "show", lbl(app, "open_app", "Ouvrir RustTerm"), true, None::<&str>)?)
+        .item(&MenuItem::with_id(app, "about", lbl(app, "about", "À propos de RustTerm"), true, None::<&str>)?)
+        .item(&MenuItem::with_id(app, "quit", lbl(app, "quit", "Quitter"), true, None::<&str>)?)
         .build()
 }
 
@@ -366,7 +430,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(AppState { settings: Mutex::new(settings.clone()), sessions: Default::default() })
+        .plugin(tauri_plugin_opener::init())
+        .manage(AppState {
+            settings: Mutex::new(settings.clone()),
+            sessions: Default::default(),
+            labels: Default::default(),
+            status: Default::default(),
+            probe_now: Default::default(),
+            shown: Default::default(),
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
             #[cfg(target_os = "macos")]
@@ -382,7 +454,6 @@ pub fn run() {
                 .tooltip("RustTerm")
                 .menu(&tray_menu(&handle, &HostsDoc::load())?)
                 .show_menu_on_left_click(true)
-                .on_menu_event(|app, ev| on_menu(app, ev.id().as_ref()))
                 .on_tray_icon_event(|t, ev| {
                     if let TrayIconEvent::DoubleClick { .. } = ev {
                         show_main(t.app_handle());
@@ -390,6 +461,17 @@ pub fn run() {
                 })
                 .build(app)?;
             tray.set_visible(settings.behavior.tray_icon)?;
+            spawn_prober(handle.clone());
+            // Safety net: show the window even if the UI never reports ready.
+            let h2 = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                if let Some(w) = h2.get_webview_window("main") {
+                    if !w.is_visible().unwrap_or(true) && !h2.state::<AppState>().shown.load(std::sync::atomic::Ordering::Relaxed) {
+                        show_main(&h2);
+                    }
+                }
+            });
             Ok(())
         })
         .on_menu_event(|app, ev| on_menu(app, ev.id().as_ref()))
@@ -405,7 +487,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            boot, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
+            boot, app_ready, set_labels, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
             ssh_connect, ssh_write, ssh_resize, ssh_close, ssh_stats,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
             check_update, install_update

@@ -26,3 +26,4 @@ russh-sftp = "3"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
+tauri-plugin-opener = "2"

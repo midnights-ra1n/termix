@@ -25,6 +25,8 @@ pub struct Settings {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Appearance {
+    /// auto | fr | en | es | de
+    pub language: String,
     pub theme: String,
     pub ui_font: String,
     pub ui_font_size: u32,
@@ -76,7 +78,7 @@ impl Default for Settings {
 }
 impl Default for Appearance {
     fn default() -> Self {
-        Self { theme: "midnights".into(), ui_font: "Geist, system-ui, sans-serif".into(), ui_font_size: 13, sidebar: true, right_panel: true }
+        Self { language: "auto".into(), theme: "midnights".into(), ui_font: "Geist, system-ui, sans-serif".into(), ui_font_size: 13, sidebar: true, right_panel: true }
     }
 }
 impl Default for Terminal {
