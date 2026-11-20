@@ -204,10 +204,15 @@ pub async fn connect(host: &Host, agent_sock: Option<String>, password: Option<S
             Err(e) => eprintln!("agent SSH indisponible ({sock}): {e}"),
         }
     }
-    if !host.key_path.is_empty() {
+    // A key file wins; otherwise a key from the sync vault.
+    let vault_pem = if host.key_path.is_empty() && !host.key_id.is_empty() { secret_get(&format!("key:{}", host.key_id)) } else { None };
+    if !host.key_path.is_empty() || vault_pem.is_some() {
         let pass = secret_get(&format!("{}:passphrase", host.id));
-        let key = russh::keys::load_secret_key(expand(&host.key_path), pass.as_deref())
-            .with_context(|| format!("lecture de la clé {}", host.key_path))?;
+        let key = match &vault_pem {
+            Some(pem) => russh::keys::decode_secret_key(pem, pass.as_deref()).context("lecture de la clé synchronisée")?,
+            None => russh::keys::load_secret_key(expand(&host.key_path), pass.as_deref())
+                .with_context(|| format!("lecture de la clé {}", host.key_path))?,
+        };
         let hash = h.best_supported_rsa_hash().await?.flatten();
         if h.authenticate_publickey(&user, PrivateKeyWithHashAlg::new(Arc::new(key), hash)).await?.success() {
             return Ok(h);

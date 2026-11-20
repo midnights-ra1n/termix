@@ -16,6 +16,11 @@ pub fn migrate_fonts(s: &mut Settings) {
     }
 }
 
+fn device_name() -> String {
+    let h = std::process::Command::new("hostname").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    h.filter(|s| !s.is_empty()).unwrap_or_else(|| std::env::consts::OS.into())
+}
+
 pub fn dir() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     let d = base.join("termix");
@@ -50,6 +55,20 @@ pub struct Settings {
     pub keybindings: BTreeMap<String, String>,
     /// User themes: name -> { key: "#rrggbb" }, same keys as the built-in themes.
     pub themes: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
+    /// Device-specific: never synchronised itself.
+    pub sync: Sync,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct Sync {
+    /// off | server | p2p
+    pub mode: String,
+    pub server_url: String,
+    pub user: String,
+    /// Stable id of this device (records, workspaces, pairing).
+    pub device_id: String,
+    pub device_name: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -122,6 +141,7 @@ impl Default for Settings {
             ssh: Ssh { agent_socket: String::new(), keepalive_secs: 30 },
             keybindings: BTreeMap::new(),
             themes: BTreeMap::new(),
+            sync: Sync::default(),
         }
     }
 }
@@ -198,6 +218,16 @@ impl Settings {
             })
             .unwrap_or_default();
         migrate_fonts(&mut s);
+        if s.sync.mode.is_empty() {
+            s.sync.mode = "off".into();
+        }
+        if s.sync.device_id.is_empty() {
+            s.sync.device_id = uuid::Uuid::new_v4().to_string();
+            let _ = s.save();
+        }
+        if s.sync.device_name.is_empty() {
+            s.sync.device_name = device_name();
+        }
         for (a, k) in default_keybindings() {
             s.keybindings.entry(a).or_insert(k);
         }
@@ -226,6 +256,8 @@ pub struct Host {
     pub user: String,
     /// Optional private key file; agent and stored password are tried as well.
     pub key_path: String,
+    /// Key stored in the sync vault (`key:<id>` record), used when no key file is set.
+    pub key_id: String,
     pub description: String,
     pub icon: String,
     pub tags: Vec<String>,

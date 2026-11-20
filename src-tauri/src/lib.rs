@@ -1,6 +1,9 @@
 mod config;
 mod probe;
 mod ssh;
+mod sync;
+mod p2p;
+mod syncd;
 
 use config::{HostsDoc, Settings};
 use std::collections::HashMap;
@@ -58,7 +61,9 @@ fn boot(app: AppHandle, st: State<AppState>) -> Boot {
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, st: State<AppState>, settings: Settings) -> R<()> {
+fn save_settings(app: AppHandle, st: State<AppState>, mut settings: Settings) -> R<()> {
+    // The sync section only changes through the sync commands (the UI copy may be stale).
+    settings.sync = st.settings.lock().unwrap().sync.clone();
     settings.save().map_err(e)?;
     *st.settings.lock().unwrap() = settings.clone();
     if let Some(t) = app.tray_by_id("main") {
@@ -67,6 +72,7 @@ fn save_settings(app: AppHandle, st: State<AppState>, settings: Settings) -> R<(
     refresh_tray(&app, &HostsDoc::load());
     #[cfg(target_os = "macos")]
     app.set_menu(build_menu(&app, &settings).map_err(e)?).map_err(e)?;
+    syncd::kick(&app);
     Ok(())
 }
 
@@ -80,6 +86,7 @@ fn save_hosts(app: AppHandle, doc: HostsDoc) -> R<()> {
     doc.save().map_err(e)?;
     refresh_tray(&app, &doc);
     app.state::<AppState>().probe_now.notify_one();
+    syncd::kick(&app);
     Ok(())
 }
 
@@ -124,8 +131,10 @@ fn read_hosts_file(path: String) -> R<HostsDoc> {
 }
 
 #[tauri::command]
-fn set_secret(id: String, value: String) -> R<()> {
-    config::secret_set(&id, &value).map_err(e)
+fn set_secret(app: AppHandle, id: String, value: String) -> R<()> {
+    config::secret_set(&id, &value).map_err(e)?;
+    syncd::kick(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -477,6 +486,7 @@ pub fn run() {
             probe_now: Default::default(),
             shown: Default::default(),
         })
+        .manage(syncd::SyncCtl::default())
         .setup(move |app| {
             let handle = app.handle().clone();
             #[cfg(target_os = "macos")]
@@ -500,6 +510,7 @@ pub fn run() {
                 .build(app)?;
             tray.set_visible(settings.behavior.tray_icon)?;
             spawn_prober(handle.clone());
+            syncd::spawn(handle.clone());
             // Safety net: show the window even if the UI never reports ready.
             let h2 = handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -528,7 +539,10 @@ pub fn run() {
             boot, app_ready, set_labels, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
             ssh_connect, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
-            check_update, install_update
+            check_update, install_update,
+            syncd::sync_status, syncd::sync_set_mode, syncd::sync_login, syncd::sync_logout, syncd::sync_unlock, syncd::sync_lock, syncd::sync_now,
+            syncd::p2p_pair_start, syncd::p2p_pair, syncd::p2p_forget, syncd::sync_set_workspace, syncd::sync_workspaces,
+            syncd::sync_keys, syncd::sync_key_import, syncd::sync_key_delete
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Termix")

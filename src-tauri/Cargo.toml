@@ -27,3 +27,20 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "linux-
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
 tauri-plugin-opener = "2"
+sha2 = "0.10"
+hkdf = "0.12"
+rand = "0.8"
+base64 = "0.22"
+spake2 = "0.4"
+reqwest = { version = "0.13", features = ["json"] }
+mdns-sd = "0.22.0"
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", features = ["hmac"] }
+
+# PBKDF2 (600 000 rounds) is unbearably slow unoptimised: keep it fast in dev builds too.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.pbkdf2]
+opt-level = 3
+[profile.dev.package.hmac]
+opt-level = 3
