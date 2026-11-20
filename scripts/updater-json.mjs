@@ -9,7 +9,9 @@ const PLATFORMS = [
   ["darwin-aarch64", /aarch64\.app\.tar\.gz$/],
   ["darwin-x86_64", /x64\.app\.tar\.gz$/],
   ["linux-x86_64", /amd64\.AppImage$/],
+  ["linux-aarch64", /aarch64\.AppImage$/],
   ["windows-x86_64", /x64-setup\.exe$/],
+  ["windows-aarch64", /arm64-setup\.exe$/],
 ];
 const platforms = {};
 for (const [key, re] of PLATFORMS) {

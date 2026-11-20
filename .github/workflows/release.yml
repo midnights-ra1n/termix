@@ -88,10 +88,15 @@ jobs:
             args: --target aarch64-apple-darwin --bundles app,dmg
           - os: macos-latest
             args: --target x86_64-apple-darwin --bundles app,dmg
+          # shortcut: rpm of nightly/beta carries a "-" in its version (dnf misreads it), fine while those channels are AppImage/deb-first.
           - os: ubuntu-22.04
-            args: --bundles deb,appimage
+            args: --bundles deb,appimage,rpm
+          - os: ubuntu-22.04-arm
+            args: --bundles deb,appimage,rpm
           # NSIS only: MSI (WiX) rejects non-numeric prerelease versions like 0.1.0-nightly.N
           - os: windows-latest
+            args: --bundles nsis
+          - os: windows-11-arm
             args: --bundles nsis
     runs-on: ${{ matrix.os }}
     steps:
@@ -113,7 +118,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.prepare.outputs.release_id }}
-          uploadUpdaterJson: false
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
 
   # One job writes latest.json once every platform is uploaded (parallel jobs would overwrite each other).
