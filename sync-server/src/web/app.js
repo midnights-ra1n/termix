@@ -20,7 +20,10 @@ function h(tag, attrs = {}, ...kids) {
   return el;
 }
 const app = () => document.getElementById("app");
-const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString() : "");
+const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString(undefined, { dateStyle: "medium" }) : "");
+const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "");
+/** Page title, one-line description and the page's main action on the same line. */
+const head = (title, lead, action) => h("div", { class: "head" }, h("div", {}, h("h1", {}, title), h("p", { class: "lead" }, lead)), action);
 
 // ---------- API ----------
 async function api(method, path, body) {
@@ -121,6 +124,7 @@ function loginView() {
       } catch (x) { err.textContent = x.message; }
     } },
     h("div", { class: "brand" }, h("img", { src: "/logo.svg", alt: "" }), "Termix sync"),
+    h("p", { class: "lead" }, "Hosts, settings and keys of your Termix devices"),
     h("label", {}, "User", user), h("label", {}, "Password", pw),
     h("button", { class: "btn primary" }, "Sign in"), err));
 }
@@ -132,7 +136,7 @@ function render() {
   const nav = h("nav", {}, h("div", { class: "brand" }, h("img", { src: "/logo.svg", alt: "" }), "Termix sync"),
     Object.entries(VIEWS).filter(([k]) => k !== "users" || S.me.admin).map(([k, [label]]) =>
       h("button", { "aria-current": S.view === k ? "page" : null, onclick: () => { S.view = k; render(); } }, label)),
-    h("div", { class: "who" }, S.me.user, " · ", h("button", { onclick: signOut }, "Sign out")));
+    h("div", { class: "who" }, h("span", {}, S.me.user), h("button", { onclick: signOut }, "Sign out")));
   const main = h("section", {});
   app().replaceChildren(h("div", { class: "shell" }, nav, main));
   VIEWS[S.view][1](main).catch((x) => main.append(h("p", { class: "error" }, x.message)));
@@ -148,8 +152,8 @@ async function hostsView(main) {
   await pull();
   const hosts = live("host:").map((r) => r.v).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   const folders = Object.fromEntries(live("folder:").map((r) => [r.v.id, r.v.name]));
-  main.append(h("h1", {}, "Hosts"), h("p", { class: "lead" }, "Saved hosts of your account. Changes reach your devices on their next sync."),
-    h("div", { class: "row" }, h("button", { class: "btn primary", onclick: () => hostDialog() }, "Add host")));
+  main.append(head("Hosts", "Saved hosts of your account. Changes reach your devices on their next sync",
+    h("button", { class: "btn primary", onclick: () => hostDialog() }, "Add host")));
   if (!hosts.length) return main.append(h("p", { class: "empty" }, "No host yet. Add one here or turn sync on in the Termix app."));
   main.append(h("table", {},
     h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Address"), h("th", { class: "hide-sm" }, "Folder"), h("th", { class: "hide-sm" }, "Tags"), h("th", {}))),
@@ -204,11 +208,11 @@ function hostDialog(x) {
 // ---------- SSH keys ----------
 async function keysView(main) {
   await pull();
-  main.append(h("h1", {}, "SSH keys"), h("p", { class: "lead" }, "Private keys stored encrypted in your vault. Devices write them to their keychain and use them for the hosts that select them."));
   const lock = vaultCard(render);
+  main.append(head("SSH keys", "Private keys encrypted in your vault, used by the hosts that select them on every device",
+    lock ? null : h("button", { class: "btn primary", onclick: keyDialog }, "Add key")));
   if (lock) return main.append(lock);
   const keys = live("key:");
-  main.append(h("div", { class: "row" }, h("button", { class: "btn primary", onclick: keyDialog }, "Add key")));
   if (!keys.length) return main.append(h("p", { class: "empty" }, "No key yet."));
   main.append(h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", { class: "hide-sm" }, "Public key"), h("th", {}))),
     h("tbody", {}, keys.map((r) => h("tr", {},
@@ -248,7 +252,7 @@ async function accountView(main) {
   const old = h("input", { type: "password", autocomplete: "current-password", required: true });
   const neu = h("input", { type: "password", autocomplete: "new-password", required: true, minLength: 8 });
   const msg = h("p", { class: "error" });
-  main.append(h("h1", {}, "Account"), h("p", { class: "lead" }, `Signed in as ${S.me.user}.`),
+  main.append(head("Account", `Signed in as ${S.me.user}`),
     h("form", { class: "card", onsubmit: async (e) => {
         e.preventDefault();
         try { await api("POST", "/api/me/password", { old: old.value, new: neu.value }); msg.textContent = "Password changed"; old.value = neu.value = ""; }
@@ -261,7 +265,7 @@ async function accountView(main) {
     h("div", { class: "card" }, h("h2", {}, "Signed-in devices"),
       h("table", {}, h("tbody", {}, S.me.devices.map((d) => h("tr", {},
         h("td", {}, d.device, d.current ? h("span", { class: "muted" }, " · this browser") : null),
-        h("td", { class: "muted hide-sm" }, `Last seen ${fmtDate(d.last_used)}`),
+        h("td", { class: "muted hide-sm" }, `Last seen ${fmtTime(d.last_used)}`),
         h("td", { class: "actions" }, d.current ? null : h("button", { class: "btn small danger", onclick: async () => {
           await api("DELETE", `/api/devices/${d.id}`); render();
         } }, "Sign out"))))))));
@@ -270,11 +274,11 @@ async function accountView(main) {
 // ---------- users (admin) ----------
 async function usersView(main) {
   const users = await api("GET", "/api/users");
-  main.append(h("h1", {}, "Users"), h("p", { class: "lead" }, "Each user has their own hosts, settings and vault. Administrators cannot read anyone's secrets."),
-    h("div", { class: "row" }, h("button", { class: "btn primary", onclick: userDialog }, "Add user")),
-    h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "User"), h("th", {}, "Hosts"), h("th", { class: "hide-sm" }, "Devices"), h("th", { class: "hide-sm" }, "Created"), h("th", {}))),
+  main.append(head("Users", "Each user has their own hosts, settings and vault. Administrators cannot read anyone's secrets",
+    h("button", { class: "btn primary", onclick: userDialog }, "Add user")),
+    h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "User"), h("th", { class: "hide-sm" }, "Role"), h("th", {}, "Hosts"), h("th", { class: "hide-sm" }, "Devices"), h("th", { class: "hide-sm" }, "Created"), h("th", {}))),
       h("tbody", {}, users.map((u) => h("tr", {},
-        h("td", {}, u.name, u.admin ? h("span", { class: "muted" }, " · admin") : null),
+        h("td", {}, u.name), h("td", { class: "hide-sm role" }, u.admin ? "Administrator" : "Member"),
         h("td", {}, u.hosts), h("td", { class: "hide-sm" }, u.devices), h("td", { class: "hide-sm muted" }, fmtDate(u.created)),
         h("td", { class: "actions" },
           h("button", { class: "btn small", onclick: async () => {

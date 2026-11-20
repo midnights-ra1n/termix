@@ -32,6 +32,20 @@ const INDEX: &str = include_str!("web/index.html");
 const APP_JS: &str = include_str!("web/app.js");
 const STYLE: &str = include_str!("web/style.css");
 const LOGO: &str = include_str!("../../assets/icon-rounded.svg");
+/// IBM Plex (OFL, see web/fonts/OFL.txt), served locally: the web UI never calls a font CDN.
+const FONTS: &[(&str, &[u8])] = &[
+    ("plex-sans-400.woff2", include_bytes!("web/fonts/ibm-plex-sans-latin-400-normal.woff2")),
+    ("plex-sans-500.woff2", include_bytes!("web/fonts/ibm-plex-sans-latin-500-normal.woff2")),
+    ("plex-sans-600.woff2", include_bytes!("web/fonts/ibm-plex-sans-latin-600-normal.woff2")),
+    ("plex-mono-400.woff2", include_bytes!("web/fonts/ibm-plex-mono-latin-400-normal.woff2")),
+];
+
+async fn font(Path(name): Path<String>) -> Response {
+    match FONTS.iter().find(|(n, _)| *n == name) {
+        Some((_, bytes)) => ([(header::CONTENT_TYPE, "font/woff2"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")], *bytes).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
 
 // ---------- errors ----------
 
@@ -453,6 +467,7 @@ fn app(db: Db) -> Router {
         .route("/app.js", get(|| async { asset("text/javascript; charset=utf-8", APP_JS) }))
         .route("/style.css", get(|| async { asset("text/css; charset=utf-8", STYLE) }))
         .route("/logo.svg", get(|| async { asset("image/svg+xml", LOGO) }))
+        .route("/fonts/{name}", get(font))
         .route("/healthz", get(|| async { "ok" }))
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))

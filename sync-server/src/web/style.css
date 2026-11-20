@@ -1,3 +1,8 @@
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: swap; src: url(/fonts/plex-sans-400.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-display: swap; src: url(/fonts/plex-sans-500.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: swap; src: url(/fonts/plex-sans-600.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url(/fonts/plex-mono-400.woff2) format("woff2"); }
+
 :root {
   --bg: #36415A; --scene: #3E4A64; --vide: #2B3448; --line: rgba(238, 238, 238, .09);
   --ink: #EEEEEE; --mute: #CDD3DD; --faint: #B3BBC8;
@@ -13,6 +18,8 @@ button, input, select { font: inherit; color: inherit; }
 
 .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
 .login form { width: min(360px, 100%); display: grid; gap: 12px; }
+.login .brand { margin-bottom: 0; }
+.login .lead { margin-bottom: 12px; }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 22px; font-weight: 600; }
 .brand img { width: 40px; height: 40px; }
 
@@ -24,18 +31,22 @@ nav button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 8px;
 nav button:hover { background: var(--scene); }
 nav button[aria-current="page"] { background: var(--scene); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
 nav button:focus-visible { outline: 2px solid var(--focus); }
-nav .who { margin-top: auto; padding: 8px 12px; color: var(--faint); font-size: 12px; }
+nav .who { margin-top: auto; padding: 8px 12px; display: flex; align-items: baseline; gap: 8px; color: var(--faint); font-size: 13px; }
+nav .who button { all: unset; cursor: pointer; padding: 0; color: var(--mute); }
+nav .who button:hover { color: var(--ink); background: none; }
 section { padding: 24px 32px; max-width: 1100px; }
 h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
-.lead { color: var(--mute); margin: 0 0 20px; }
+.lead { color: var(--mute); margin: 0; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 
 label { display: grid; gap: 4px; color: var(--mute); font-size: 13px; }
 input, select { background: var(--vide); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-height: 36px; }
 input[type=checkbox] { min-height: auto; width: 16px; height: 16px; accent-color: var(--accent); }
 label.check { display: flex; align-items: center; gap: 8px; }
-.btn { border: 1px solid var(--line); background: var(--scene); border-radius: 10px; padding: 0 16px; min-height: 36px; cursor: pointer; }
+.btn { border: 1px solid var(--line); background: var(--scene); border-radius: 10px; padding: 0 16px; min-height: 36px; cursor: pointer; transition: background-color .12s ease; }
 .btn:hover { background: #46546F; }
-.btn.primary { background: var(--ink); color: var(--vide); border-color: transparent; font-weight: 500; }
+.btn.primary { background: var(--ink); color: var(--vide); border-color: transparent; font-weight: 500; flex: none; }
+.btn.primary:hover { background: #FFFFFF; }
 .btn.danger { color: var(--error); }
 .btn.small { min-height: 28px; padding: 0 10px; font-size: 13px; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -48,6 +59,13 @@ table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 th { text-align: left; font-weight: 500; color: var(--faint); font-size: 12px; padding: 8px; border-bottom: 1px solid var(--line); }
 td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 td.actions { text-align: right; white-space: nowrap; }
+/* Row actions stay quiet until the row is pointed at or focused. */
+td.actions .btn { background: none; border-color: transparent; color: var(--faint); opacity: .7; transition: opacity .12s ease, color .12s ease, background-color .12s ease; }
+tr:hover td.actions .btn, tr:focus-within td.actions .btn { opacity: 1; }
+td.actions .btn:hover { background: var(--vide); color: var(--ink); }
+td.actions .btn.danger:hover { color: var(--error); }
+@media (hover: none) { td.actions .btn { opacity: 1; } }
+.role { color: var(--faint); font-size: 13px; }
 .tag { display: inline-block; font-size: 12px; color: var(--mute); background: var(--vide); border-radius: 6px; padding: 0 6px; margin-right: 4px; }
 
 .card { background: var(--scene); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-top: 16px; display: grid; gap: 12px; }
