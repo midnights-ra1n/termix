@@ -1,5 +1,5 @@
 # Release channels:
-#   stable  -> push on `stable`                 -> release v<version> (GitHub "latest", used by the stable updater)
+#   stable  -> push on `stable`                 -> release v<version> (GitHub "latest", used by the stable updater); same version again = re-release in place
 #   beta    -> push on `beta`                   -> rolling prerelease tagged `beta`
 #   nightly -> push on `nightly` + every night  -> rolling prerelease tagged `nightly`
 # Secret required: TAURI_SIGNING_PRIVATE_KEY (+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD if the key has one).
@@ -71,6 +71,13 @@ jobs:
             flags=(--prerelease)
           else
             flags=(--latest)
+          fi
+          if [ "$CHANNEL" = stable ] && gh release view "$TAG" >/dev/null 2>&1; then
+            # Re-release of the same version: move the tag to this commit and drop the old binaries/signatures.
+            # Note: installs already on this version won't be offered it by the updater (same version number).
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$SHA" -F force=true >/dev/null
+            gh release view "$TAG" --json assets --jq '.assets[].name' | while read -r a; do gh release delete-asset "$TAG" "$a" --yes; done
+            gh release edit "$TAG" --notes "Canal $CHANNEL — commit $SHA (re-release)" --latest
           fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --target "$SHA" --title "Termix $VERSION" \
