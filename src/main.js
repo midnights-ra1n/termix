@@ -10,6 +10,7 @@ import { initHosts, render as renderHosts, renderStatus, editHost, editFolder, e
 import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab } from "./panes.js";
 import { initPanel, refreshPanel } from "./panel.js";
 import { clearLocalHistory } from "./suggest.js";
+import { syncView } from "./sync.js";
 import appIcon from "../src-tauri/icons/128x128@2x.png";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
@@ -244,6 +245,7 @@ async function openSettings(section = "general") {
       field(t("keepalive"), f.keepalive)),
       h("h4", {}, t("agents_found")), found],
     keys: [t("set_keys"), h("p.mute.small", {}, t("keys_hint")), h("div.kb-list", {}, ...kbRows)],
+    sync: [t("set_sync"), syncView()],
     about: [t("set_about"), aboutView()],
   };
 
@@ -351,6 +353,15 @@ async function boot() {
   listen("menu", (e) => ACTIONS[e.payload]?.());
   listen("connect-host", (e) => { const host = S.hosts.hosts.find((x) => x.id === e.payload); if (host) newTab(host); });
   listen("host-status", (e) => { S.status = e.payload; renderStatus(); });
+  // Another device changed hosts or settings: reload them.
+  listen("sync-changed", async (e) => {
+    if (e.payload.hosts) { S.hosts = await invoke("get_hosts"); document.dispatchEvent(new Event("hosts-changed")); }
+    if (e.payload.settings) {
+      const langChanged = (await invoke("boot").then((b) => { const c = b.settings.appearance.language !== S.settings.appearance.language; S.settings = b.settings; return c; }));
+      applyAppearance();
+      if (langChanged) { applyLanguage(); initPanel(); renderHosts(); initPanes(); }
+    }
+  });
   if (S.settings.behavior.check_updates) { setTimeout(() => checkUpdate(false), 2000); scheduleUpdates(); }
 }
 

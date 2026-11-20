@@ -190,12 +190,46 @@ function render() {
   const area = document.getElementById("panes");
   area.replaceChildren(current ? renderNode(current.root) : welcome());
   current && leaves(current.root).forEach((p) => p.el.classList.toggle("focused", p === current.focused));
+  saveWorkspace();
+}
+
+// ---------- workspace: tabs, splits and tmux sessions, synced so another device can reopen them ----------
+
+function serialize(n) {
+  if (n instanceof Pane) return n.host ? { host: n.host.id, tmux: n.tmux || null } : null;
+  const a = serialize(n.a), b = serialize(n.b);
+  return a && b ? { split: n.split, ratio: n.ratio, a, b } : a || b;
+}
+let wsTimer;
+function saveWorkspace() {
+  clearTimeout(wsTimer);
+  wsTimer = setTimeout(() => invoke("sync_set_workspace", { tabs: tabs.map((t) => serialize(t.root)).filter(Boolean) }).catch(() => {}), 2000);
+}
+
+/** Reopens another device's tabs and splits, reattaching each pane's tmux session. */
+export function openWorkspace(ws) {
+  for (const node of ws.tabs) {
+    const build = (n) => {
+      if (n.split) return { split: n.split, ratio: n.ratio, a: build(n.a), b: build(n.b) };
+      const p = new Pane();
+      p.tmux = n.tmux || undefined;
+      p.pending = S.hosts.hosts.find((x) => x.id === n.host);
+      return p;
+    };
+    const root = build(node);
+    const tab = addTab(root);
+    selectTab(tab);
+    for (const p of leaves(root)) if (p.pending) { p.connect(p.pending); delete p.pending; }
+  }
 }
 
 function updateTabTitles() { render(); }
 
 function welcome() {
-  const el = h("div.welcome", {}, h("h1", {}, h("img", { src: logo, alt: "" }), "Termix"), h("p", {}, tr("welcome")));
+  const resume = h("div.resume");
+  const el = h("div.welcome", {}, h("h1", {}, h("img", { src: logo, alt: "" }), "Termix"), h("p", {}, tr("welcome")), resume);
+  invoke("sync_workspaces").then((list) => resume.replaceChildren(...list.slice(0, 3).map((ws) =>
+    h("button.btn", { onclick: () => openWorkspace(ws) }, icon("terminal", 14), tr("resume_ws", ws.name, ws.tabs.length))))).catch(() => {});
   el.addEventListener("dragover", (e) => e.dataTransfer.types.includes("text/plain") && e.preventDefault());
   el.addEventListener("drop", (e) => {
     const [kind, id] = e.dataTransfer.getData("text/plain").split(":");
@@ -205,12 +239,16 @@ function welcome() {
   return el;
 }
 
+function addTab(root) {
+  const tab = { root, focused: leaves(root)[0], title() { const l = leaves(this.root); const n = l[0].host?.name || tr("new_tab"); return l.length > 1 ? `${n} +${l.length - 1}` : n; } };
+  tabs.push(tab);
+  return tab;
+}
+
 export function newTab(host = null, tmux = undefined) {
   const p = new Pane();
   p.tmux = tmux;
-  const tab = { root: p, focused: p, title() { const l = leaves(this.root); const n = l[0].host?.name || tr("new_tab"); return l.length > 1 ? `${n} +${l.length - 1}` : n; } };
-  tabs.push(tab);
-  selectTab(tab);
+  selectTab(addTab(p));
   if (host) p.connect(host);
   return p;
 }

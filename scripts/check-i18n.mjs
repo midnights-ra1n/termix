@@ -6,7 +6,7 @@ const fr = dicts.fr; let bad = 0;
 for (const [k, d] of Object.entries(dicts)) for (const key of fr) if (!d.has(key)) { console.log(k, "missing", key); bad++; }
 // keys used in code
 const fs = await import("node:fs");
-for (const f of ["src/main.js", "src/hosts.js", "src/panes.js", "src/panel.js", "src/ui.js"]) {
+for (const f of ["src/main.js", "src/hosts.js", "src/panes.js", "src/panel.js", "src/ui.js", "src/sync.js"]) {
   for (const m of fs.readFileSync(f, "utf8").matchAll(/\b(?:t|tr)\("(\w+)"[,)]/g)) if (!fr.has(m[1])) { console.log(f, "unknown key", m[1]); bad++; }
 }
 console.log(Object.fromEntries(Object.entries(dicts).map(([k, d]) => [k, d.size])), bad ? "FAIL" : "OK");

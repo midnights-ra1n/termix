@@ -130,3 +130,18 @@ Pendant la saisie, Termix affiche en grisé la suite la plus probable de la comm
 - `⇧Tab` : liste des suggestions (`↑` `↓` pour choisir, `Entrée` pour valider, `Échap` pour fermer)
 
 `Tab` reste envoyé au shell distant pour sa propre complétion. Les suggestions sont désactivées dans les applications plein écran (vim, htop…) et quand la ligne n'a pas de prompt reconnu (`$ # % > ❯ ➜` ou séparateur Powerline).
+
+## Synchronisation
+
+Se règle dans **Réglages → Synchronisation** (voir le [README](../README.md#sync) pour le fonctionnement). Section propre à chaque appareil, jamais synchronisée :
+
+```toml
+[sync]
+mode = "off"            # off | server | p2p (réseau local)
+server_url = ""         # ex. https://sync.example.com
+user = ""
+device_id = "…"         # généré au premier lancement, ne pas modifier
+device_name = "MacBook" # nom affiché sur les autres appareils
+```
+
+L'état de la synchro (enregistrements, appareils appairés) est dans `sync.json`. Le jeton du serveur, la clé du coffre, les clés d'appairage et les clés SSH synchronisées sont dans le trousseau du système. Supprimer `sync.json` repart d'un état vierge : les hôtes locaux sont renvoyés à la synchro suivante.

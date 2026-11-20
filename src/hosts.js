@@ -197,6 +197,7 @@ export async function editHost(x = null, folder = null) {
   const isNew = !x;
   x = x ? structuredClone(x) : { id: uid(), name: "", host: "", port: 22, user: "", key_path: "", description: "", icon: "server", tags: [], folder, favorite: false };
   const hasPw = !isNew && (await invoke("has_secret", { id: x.id }).catch(() => false));
+  const vaultKeys = await invoke("sync_keys").catch(() => []);
   const inp = (k, attrs = {}) => h("input", { value: x[k] ?? "", ...attrs });
   const f = {
     name: inp("name", { placeholder: "web-1", autofocus: true }),
@@ -210,6 +211,8 @@ export async function editHost(x = null, folder = null) {
     tags: h("input", { value: x.tags.join(", "), placeholder: "prod, web" }),
     favorite: h("input", { type: "checkbox", checked: x.favorite, className: "switch" }),
     folder: h("select", {}, ...folderOptions(x.folder)),
+    key_id: h("select", {}, h("option", { value: "" }, t("f_vault_key_none")),
+      ...vaultKeys.map((k) => h("option", { value: k.id, selected: k.id === x.key_id }, k.name || k.id))),
   };
   let chosenIcon = x.icon || "server";
   const icons = h("div.icon-grid", { role: "radiogroup", "aria-label": t("f_icon") }, ...Object.keys(HOST_ICONS).map((k) =>
@@ -229,6 +232,7 @@ export async function editHost(x = null, folder = null) {
     field(t("f_name"), f.name), field(t("f_host"), f.host),
     field(t("f_user"), f.user), field(t("f_port"), f.port),
     h("div.span2", {}, field(t("f_key"), h("div.inline", {}, f.key_path, browse, importBtn), t("f_key_hint"))),
+    vaultKeys.length ? h("div.span2", {}, field(t("f_vault_key"), f.key_id, t("f_vault_key_hint"))) : null,
     field(t("f_password"), f.password, t("f_password_hint")), field(t("f_passphrase"), f.passphrase),
     h("div.span2", {}, field(t("f_desc"), f.description)),
     field(t("f_tags"), f.tags, t("f_tags_hint")), field(t("f_folder"), f.folder),
@@ -241,7 +245,7 @@ export async function editHost(x = null, folder = null) {
   if (!f.host.value.trim() || port < 1 || port > 65535) return toast(t("bad_host"), "error");
   Object.assign(x, {
     name: f.name.value.trim() || f.host.value.trim(), host: f.host.value.trim(), port, user: f.user.value.trim(),
-    key_path: f.key_path.value.trim(), description: f.description.value, icon: chosenIcon,
+    key_path: f.key_path.value.trim(), key_id: f.key_id.value, description: f.description.value, icon: chosenIcon,
     tags: f.tags.value.split(",").map((s) => s.trim()).filter(Boolean), folder: f.folder.value || null, favorite: f.favorite.checked,
   });
   try {

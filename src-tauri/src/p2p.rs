@@ -215,6 +215,11 @@ pub async fn pair(addrs: &[SocketAddr], peer_id: &str, my_id: &str, my_name: &st
         // Joining the other device's vault: secrets are re-encrypted after the next unlock.
         store.salt = salt.into();
         let _ = config::secret_set("sync:vault", "");
+        // Our old vault's ciphertexts can't be read with the shared one: forget them, the peer's win.
+        let stale = |k: &String| k == "vault:check" || k.starts_with("secret:") || k.starts_with("key:");
+        store.records.retain(|k, _| !stale(k));
+        store.dirty.retain(|k| !stale(k));
+        store.local_secrets.clear();
     }
     remember(&mut store, peer_id, &name, &key)?;
     Ok(name)

@@ -283,3 +283,13 @@ input.switch:checked::after { transform: translateX(16px); background: var(--onA
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Settings → Sync */
+.sync-box { display: grid; gap: 8px; margin-top: 16px; }
+.sync-box h4 { margin: 8px 0 0; }
+.sync-box .inline input { flex: 1; }
+.sync-status { display: flex; gap: 8px; align-items: center; margin-top: 20px; }
+.pair-code { font-family: var(--term-font, monospace); margin: 0; }
+.pair-code:empty { display: none; }
+.welcome .resume { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+.welcome .resume .btn { display: inline-flex; align-items: center; gap: 8px; }
