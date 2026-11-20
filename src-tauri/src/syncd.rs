@@ -98,13 +98,11 @@ fn finish(app: &AppHandle, store: &mut Store, vault: Option<&Vault>) -> anyhow::
     store.save()?;
     if applied.settings {
         *st.settings.lock().unwrap() = new_settings.clone();
-        #[cfg(target_os = "macos")]
-        if let Ok(m) = crate::build_menu(app, &new_settings) {
-            let _ = app.set_menu(m);
-        }
+    }
+    if applied.hosts || applied.settings {
+        crate::refresh_menus(app);
     }
     if applied.hosts {
-        crate::refresh_tray(app, &HostsDoc::load());
         st.probe_now.notify_one();
     }
     if applied.hosts || applied.settings {

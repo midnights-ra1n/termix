@@ -19,6 +19,9 @@ const fr = {
   toggle_sidebar: "Afficher/masquer les hôtes", toggle_panel: "Afficher/masquer SFTP et stats",
   zoom_in: "Agrandir le texte", zoom_out: "Réduire le texte", zoom_reset: "Taille réelle",
   open_docs: "Documentation de la configuration", no_hosts: "Aucun hôte", open_app: "Ouvrir Termix", quit: "Quitter",
+  menu_hosts: "Hôtes", clear_screen: "Effacer l'écran", refresh_status: "Actualiser l'état des hôtes", shortcuts: "Raccourcis clavier", report_issue: "Signaler un problème…",
+  undo: "Annuler", redo: "Rétablir", cut: "Couper", copy: "Copier", paste: "Coller", select_all: "Tout sélectionner", fullscreen: "Plein écran",
+  minimize: "Réduire", maximize: "Agrandir", restore: "Restaurer", close_window: "Fermer la fenêtre",
   // general
   search: "Rechercher", cancel: "Annuler", save: "Enregistrer", create: "Créer", close: "Fermer", retry: "Réessayer",
   default: "Défaut", no_result: "Aucun résultat", empty_hosts: "Aucun hôte. Ajoutez-en un avec +",
@@ -87,6 +90,9 @@ const en = {
   toggle_sidebar: "Show/Hide Hosts", toggle_panel: "Show/Hide SFTP & Stats",
   zoom_in: "Bigger Text", zoom_out: "Smaller Text", zoom_reset: "Actual Size",
   open_docs: "Configuration Documentation", no_hosts: "No hosts", open_app: "Open Termix", quit: "Quit",
+  menu_hosts: "Hosts", clear_screen: "Clear Screen", refresh_status: "Refresh Host Status", shortcuts: "Keyboard Shortcuts", report_issue: "Report an Issue…",
+  undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", select_all: "Select All", fullscreen: "Full Screen",
+  minimize: "Minimize", maximize: "Maximize", restore: "Restore", close_window: "Close Window",
   search: "Search", cancel: "Cancel", save: "Save", create: "Create", close: "Close", retry: "Retry",
   default: "Default", no_result: "No results", empty_hosts: "No hosts yet. Add one with +",
   new_tab: "New tab", close_tab: "Close tab", hosts: "Hosts", panel: "SFTP & stats",
@@ -147,6 +153,9 @@ const es = {
   toggle_sidebar: "Mostrar/ocultar hosts", toggle_panel: "Mostrar/ocultar SFTP y estadísticas",
   zoom_in: "Aumentar texto", zoom_out: "Reducir texto", zoom_reset: "Tamaño real",
   open_docs: "Documentación de configuración", no_hosts: "Sin hosts", open_app: "Abrir Termix", quit: "Salir",
+  menu_hosts: "Hosts", clear_screen: "Limpiar pantalla", refresh_status: "Actualizar estado de los hosts", shortcuts: "Atajos de teclado", report_issue: "Informar de un problema…",
+  undo: "Deshacer", redo: "Rehacer", cut: "Cortar", copy: "Copiar", paste: "Pegar", select_all: "Seleccionar todo", fullscreen: "Pantalla completa",
+  minimize: "Minimizar", maximize: "Maximizar", restore: "Restaurar", close_window: "Cerrar ventana",
   search: "Buscar", cancel: "Cancelar", save: "Guardar", create: "Crear", close: "Cerrar", retry: "Reintentar",
   default: "Predeterminado", no_result: "Sin resultados", empty_hosts: "Aún no hay hosts. Añade uno con +",
   new_tab: "Nueva pestaña", close_tab: "Cerrar pestaña", hosts: "Hosts", panel: "SFTP y estadísticas",
@@ -207,6 +216,9 @@ const de = {
   toggle_sidebar: "Hosts ein-/ausblenden", toggle_panel: "SFTP & Statistiken ein-/ausblenden",
   zoom_in: "Text vergrößern", zoom_out: "Text verkleinern", zoom_reset: "Originalgröße",
   open_docs: "Konfigurationsdokumentation", no_hosts: "Keine Hosts", open_app: "Termix öffnen", quit: "Beenden",
+  menu_hosts: "Hosts", clear_screen: "Bildschirm leeren", refresh_status: "Host-Status aktualisieren", shortcuts: "Tastaturkurzbefehle", report_issue: "Problem melden…",
+  undo: "Widerrufen", redo: "Wiederholen", cut: "Ausschneiden", copy: "Kopieren", paste: "Einsetzen", select_all: "Alles auswählen", fullscreen: "Vollbild",
+  minimize: "Minimieren", maximize: "Maximieren", restore: "Wiederherstellen", close_window: "Fenster schließen",
   search: "Suchen", cancel: "Abbrechen", save: "Sichern", create: "Erstellen", close: "Schließen", retry: "Erneut versuchen",
   default: "Standard", no_result: "Keine Ergebnisse", empty_hosts: "Noch keine Hosts. Mit + hinzufügen",
   new_tab: "Neuer Tab", close_tab: "Tab schließen", hosts: "Hosts", panel: "SFTP & Statistiken",
@@ -273,5 +285,6 @@ export function t(key, ...args) {
 export const MENU_KEYS = ["about", "check_update", "settings", "quit_app", "menu_file", "menu_edit", "menu_view", "menu_window", "menu_help",
   "new_host", "new_folder", "import_hosts", "export_hosts", "close_pane", "search_hosts", "split_right", "split_left", "split_down", "split_up",
   "focus_next", "focus_prev", "next_tab", "prev_tab", "toggle_sidebar", "toggle_panel", "zoom_in", "zoom_out", "zoom_reset", "open_docs",
-  "no_hosts", "open_app", "quit"];
+  "no_hosts", "open_app", "quit", "new_tab", "quick_connect", "menu_hosts", "clear_screen", "refresh_status", "shortcuts", "release_notes", "report_issue",
+  "undo", "redo", "cut", "copy", "paste", "select_all", "fullscreen", "minimize", "maximize", "close_window"];
 export const menuLabels = () => Object.fromEntries(MENU_KEYS.map((k) => [k, t(k)]));

@@ -7,7 +7,8 @@ import { S, h, icon, invoke, modal, field, toast, isMac } from "./ui.js";
 import { THEMES, resolveTheme, applyTheme, xtermTheme } from "./themes.js";
 import { t, setLanguage, LANGS, menuLabels } from "./i18n.js";
 import { initHosts, render as renderHosts, renderStatus, editHost, editFolder, exportHosts, importHosts } from "./hosts.js";
-import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab, focusTerminal } from "./panes.js";
+import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab, focusTerminal, quickConnect, focused } from "./panes.js";
+import { initMenubar, refreshMenubar } from "./menubar.js";
 import { initPanel, refreshPanel } from "./panel.js";
 import { clearLocalHistory } from "./suggest.js";
 import { syncView, initSyncStatus } from "./sync.js";
@@ -41,8 +42,15 @@ const ACTIONS = {
   check_update: () => checkUpdate(true),
   about: () => openAbout(),
   open_docs: () => openUrl(`${REPO}/blob/dev/docs/CONFIG.md`),
+  new_tab: () => newTab(),
+  quick_connect: () => quickConnect(),
+  clear_screen: () => focused()?.term?.clear(),
+  refresh_status: () => invoke("refresh_status"),
+  shortcuts: () => openSettings("keys"),
+  release_notes: () => openUrl(`${REPO}/releases`),
+  report_issue: () => openUrl(`${REPO}/issues/new`),
 };
-const BINDABLE = ["new_host", "close_pane", "split_right", "split_left", "split_down", "split_up", "focus_next", "focus_prev",
+const BINDABLE = ["new_tab", "quick_connect", "new_host", "close_pane", "split_right", "split_left", "split_down", "split_up", "focus_next", "focus_prev",
   "next_tab", "prev_tab", "search_hosts", "toggle_sidebar", "toggle_panel", "settings", "zoom_in", "zoom_out", "zoom_reset"];
 
 // ---------- keyboard ----------
@@ -161,7 +169,7 @@ function applyLanguage() {
   set("open-settings", "settings");
   const search = document.getElementById("host-search");
   search.placeholder = t("search");
-  invoke("set_labels", { labels: menuLabels() }).catch(() => {});
+  invoke("set_labels", { labels: menuLabels() }).then(refreshMenubar).catch(() => {});
 }
 
 // ---------- settings ----------
@@ -349,7 +357,9 @@ async function checkUpdate(manual, channel = S.settings.behavior.update_channel)
 async function boot() {
   const [b, hosts, status] = await Promise.all([invoke("boot"), invoke("get_hosts"), invoke("host_status")]);
   Object.assign(S, { settings: b.settings, defaults: b.defaults, platform: b.platform, arch: b.arch, version: b.version, configDir: b.config_dir, hosts, status });
-  document.body.dataset.platform = S.platform;
+  document.body.dataset.platform = document.documentElement.dataset.platform = S.platform;
+  document.documentElement.dataset.desktop = b.desktop;
+  initMenubar();
   for (const [id, name] of [["toggle-sidebar", "sidebar"], ["add-folder", "folderPlus"], ["add-host", "plus"], ["split-h", "splitH"], ["split-v", "splitV"], ["toggle-panel", "panel"], ["open-settings", "settings"]]) {
     document.getElementById(id).append(icon(name, 16));
   }

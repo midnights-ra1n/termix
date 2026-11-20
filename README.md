@@ -33,7 +33,7 @@ Rust (Tauri v2, russh) and xterm.js. No telemetry, no account required.</p>
 - **Side panel**: server stats (CPU, memory, disk, network, load average), SFTP browser, Docker containers and their state, tmux sessions
 - **Sync**: hosts, folders, settings, passwords, SSH keys and open tabs between your devices, through a self-hosted server or directly on the local network. Passwords and keys are end-to-end encrypted
 - **Customization**: 24 built-in themes plus your own, 11 bundled fonts (5 sans for the interface, 6 mono for the terminal) or any installed one, accent color, density, cursor, padding, letter spacing, everything from the GUI or a TOML file
-- **Desktop integration**: native macOS menu bar, native tray menu on macOS, GNOME, KDE and Windows with your hosts one click away, optional background mode for instant reopening, native Wayland
+- **Desktop integration**: native macOS menu bar (same menus in the custom title bar on Windows and Linux, with Windows-style window buttons and the system's rounded corners), tray icon that turns white or black to match the panel, native tray menu on macOS, GNOME, KDE and Windows with your hosts one click away, optional background mode for instant reopening, native Wayland
 - **Updates**: automatic and manual, from GitHub releases, on the stable, beta or nightly channel
 - **Languages**: English, French, Spanish, German
 

@@ -9,7 +9,7 @@ use config::{HostsDoc, Settings};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::menu::{IconMenuItem, Menu, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{IconMenuItem, Menu, MenuBuilder, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
@@ -46,6 +46,8 @@ struct Boot {
     arch: &'static str,
     version: String,
     config_dir: String,
+    /// XDG_CURRENT_DESKTOP (Linux), for the window corner radius.
+    desktop: String,
 }
 
 #[tauri::command]
@@ -57,6 +59,7 @@ fn boot(app: AppHandle, st: State<AppState>) -> Boot {
         arch: std::env::consts::ARCH,
         version: app.package_info().version.to_string(),
         config_dir: config::dir().to_string_lossy().into(),
+        desktop: std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
     }
 }
 
@@ -69,9 +72,7 @@ fn save_settings(app: AppHandle, st: State<AppState>, mut settings: Settings) ->
     if let Some(t) = app.tray_by_id("main") {
         let _ = t.set_visible(settings.behavior.tray_icon);
     }
-    refresh_tray(&app, &HostsDoc::load());
-    #[cfg(target_os = "macos")]
-    app.set_menu(build_menu(&app, &settings).map_err(e)?).map_err(e)?;
+    refresh_menus(&app);
     syncd::kick(&app);
     Ok(())
 }
@@ -84,7 +85,7 @@ fn get_hosts() -> HostsDoc {
 #[tauri::command]
 fn save_hosts(app: AppHandle, doc: HostsDoc) -> R<()> {
     doc.save().map_err(e)?;
-    refresh_tray(&app, &doc);
+    refresh_menus(&app);
     app.state::<AppState>().probe_now.notify_one();
     syncd::kick(&app);
     Ok(())
@@ -99,12 +100,7 @@ fn app_ready(app: AppHandle) {
 #[tauri::command]
 fn set_labels(app: AppHandle, st: State<AppState>, labels: HashMap<String, String>) -> R<()> {
     *st.labels.lock().unwrap() = labels;
-    #[cfg(target_os = "macos")]
-    {
-        let s = st.settings.lock().unwrap().clone();
-        app.set_menu(build_menu(&app, &s).map_err(e)?).map_err(e)?;
-    }
-    refresh_tray(&app, &HostsDoc::load());
+    refresh_menus(&app);
     Ok(())
 }
 
@@ -211,7 +207,7 @@ async fn ssh_connect(
     .map_err(e)?;
     st.sessions.lock().await.insert(id.clone(), sess);
     config::recent_push(&host_id);
-    refresh_tray(&app, &HostsDoc::load());
+    refresh_menus(&app);
     Ok(id)
 }
 
@@ -356,78 +352,138 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-/// Native macOS menu bar. Accelerators come from the user's keybindings so menus always show the real shortcut.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
-    let l = |id: &str, fallback: &str| lbl(app, id, fallback);
-    let item = |id: &str, label: &str| {
-        MenuItem::with_id(app, id, l(id, label), true, s.keybindings.get(id).map(|k| k.as_str()).filter(|k| !k.is_empty()))
+#[derive(serde::Serialize)]
+struct Entry {
+    id: String,
+    label: String,
+    accel: String,
+}
+
+/// One menu model for every OS: macOS builds the native bar from it, Windows/Linux draw it in HTML (`menu_model`).
+/// Ids: "-" separator, "@x" native item (predefined on macOS, handled by the web view elsewhere), "host:<id>" connect.
+/// Accelerators come from the user's keybindings so menus always show the real shortcut.
+fn menu_model(app: &AppHandle, s: &Settings) -> Vec<(&'static str, String, Vec<Entry>)> {
+    let mac = cfg!(target_os = "macos");
+    let e = |id: &str, fallback: &str| {
+        let key = id.trim_start_matches('@');
+        Entry { id: id.into(), label: lbl(app, key, fallback), accel: s.keybindings.get(key).cloned().unwrap_or_default() }
     };
-    let plain = |id: &str, label: &str| MenuItem::with_id(app, id, l(id, label), true, None::<&str>);
-    let app_menu = SubmenuBuilder::new(app, "Termix")
-        .item(&plain("about", "À propos de Termix")?)
-        .item(&plain("check_update", "Rechercher des mises à jour…")?)
-        .separator()
-        .item(&item("settings", "Réglages…")?)
-        .separator()
-        .item(&PredefinedMenuItem::services(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::hide(app, None)?)
-        .item(&PredefinedMenuItem::hide_others(app, None)?)
-        .item(&PredefinedMenuItem::show_all(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::quit(app, Some(&l("quit_app", "Quitter Termix")))?)
-        .build()?;
-    let file = SubmenuBuilder::new(app, l("menu_file", "Fichier"))
-        .item(&item("new_host", "Nouvel hôte…")?)
-        .item(&plain("new_folder", "Nouveau dossier")?)
-        .separator()
-        .item(&plain("import_hosts", "Importer des hôtes…")?)
-        .item(&plain("export_hosts", "Exporter les hôtes…")?)
-        .separator()
-        .item(&item("close_pane", "Fermer le panneau")?)
-        .build()?;
-    let edit = SubmenuBuilder::new(app, l("menu_edit", "Édition"))
-        .item(&PredefinedMenuItem::undo(app, None)?)
-        .item(&PredefinedMenuItem::redo(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::cut(app, None)?)
-        .item(&PredefinedMenuItem::copy(app, None)?)
-        .item(&PredefinedMenuItem::paste(app, None)?)
-        .item(&PredefinedMenuItem::select_all(app, None)?)
-        .separator()
-        .item(&item("search_hosts", "Rechercher un hôte")?)
-        .build()?;
-    let view = SubmenuBuilder::new(app, l("menu_view", "Présentation"))
-        .item(&item("split_right", "Diviser à droite")?)
-        .item(&item("split_left", "Diviser à gauche")?)
-        .item(&item("split_down", "Diviser en bas")?)
-        .item(&item("split_up", "Diviser en haut")?)
-        .separator()
-        .item(&item("focus_next", "Panneau suivant")?)
-        .item(&item("focus_prev", "Panneau précédent")?)
-        .item(&item("next_tab", "Onglet suivant")?)
-        .item(&item("prev_tab", "Onglet précédent")?)
-        .separator()
-        .item(&item("toggle_sidebar", "Afficher/masquer les hôtes")?)
-        .item(&item("toggle_panel", "Afficher/masquer SFTP et stats")?)
-        .separator()
-        .item(&item("zoom_in", "Agrandir le texte")?)
-        .item(&item("zoom_out", "Réduire le texte")?)
-        .item(&item("zoom_reset", "Taille réelle")?)
-        .separator()
-        .item(&PredefinedMenuItem::fullscreen(app, None)?)
-        .build()?;
-    let window = SubmenuBuilder::new(app, l("menu_window", "Fenêtre"))
-        .item(&PredefinedMenuItem::minimize(app, None)?)
-        .item(&PredefinedMenuItem::maximize(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::close_window(app, None)?)
-        .build()?;
-    let help = SubmenuBuilder::new(app, l("menu_help", "Aide"))
-        .item(&plain("open_docs", "Documentation de la configuration")?)
-        .build()?;
-    MenuBuilder::new(app).items(&[&app_menu, &file, &edit, &view, &window, &help]).build()
+    let sep = || Entry { id: "-".into(), label: String::new(), accel: String::new() };
+    let mut termix = vec![e("about", "À propos de Termix"), e("check_update", "Rechercher des mises à jour…"), sep(), e("settings", "Réglages…"), sep()];
+    if mac {
+        termix.extend([e("@services", ""), sep(), e("@hide", ""), e("@hide_others", ""), e("@show_all", ""), sep()]);
+    }
+    termix.push(e("@quit_app", "Quitter Termix"));
+    let file = vec![
+        e("new_tab", "Nouvel onglet"), e("quick_connect", "Connexion rapide…"), sep(),
+        e("new_host", "Nouvel hôte…"), e("new_folder", "Nouveau dossier"), sep(),
+        e("import_hosts", "Importer des hôtes…"), e("export_hosts", "Exporter les hôtes…"), sep(),
+        e("close_pane", "Fermer le panneau"),
+    ];
+    let edit = vec![
+        e("@undo", "Annuler"), e("@redo", "Rétablir"), sep(),
+        e("@cut", "Couper"), e("@copy", "Copier"), e("@paste", "Coller"), e("@select_all", "Tout sélectionner"), sep(),
+        e("clear_screen", "Effacer l'écran"), sep(), e("search_hosts", "Rechercher un hôte"),
+    ];
+    let view = vec![
+        e("split_right", "Diviser à droite"), e("split_left", "Diviser à gauche"), e("split_down", "Diviser en bas"), e("split_up", "Diviser en haut"), sep(),
+        e("toggle_sidebar", "Afficher/masquer les hôtes"), e("toggle_panel", "Afficher/masquer SFTP et stats"), sep(),
+        e("zoom_in", "Agrandir le texte"), e("zoom_out", "Réduire le texte"), e("zoom_reset", "Taille réelle"), sep(),
+        e("@fullscreen", "Plein écran"),
+    ];
+    // Same hosts as the tray (favorites / recent / all, per Settings).
+    let mut hosts: Vec<Entry> = {
+        let b = s.behavior.clone();
+        let doc = HostsDoc::load();
+        config::tray_hosts(&doc, &b.tray_hosts, b.tray_count, &config::recent_load())
+            .iter()
+            .map(|h| Entry { id: format!("host:{}", h.id), label: if h.name.is_empty() { h.host.clone() } else { h.name.clone() }, accel: String::new() })
+            .collect()
+    };
+    if !hosts.is_empty() {
+        hosts.push(sep());
+    }
+    hosts.extend([e("quick_connect", "Connexion rapide…"), e("refresh_status", "Actualiser l'état des hôtes")]);
+    let window = vec![
+        e("@minimize", "Réduire"), e("@maximize", "Agrandir"), sep(),
+        e("focus_next", "Panneau suivant"), e("focus_prev", "Panneau précédent"), e("next_tab", "Onglet suivant"), e("prev_tab", "Onglet précédent"), sep(),
+        e("@close_window", "Fermer la fenêtre"),
+    ];
+    let help = vec![
+        e("open_docs", "Documentation de la configuration"), e("shortcuts", "Raccourcis clavier"), sep(),
+        e("release_notes", "Notes de version"), e("report_issue", "Signaler un problème…"),
+    ];
+    vec![
+        ("termix", "Termix".into(), termix),
+        ("menu_file", lbl(app, "menu_file", "Fichier"), file),
+        ("menu_edit", lbl(app, "menu_edit", "Édition"), edit),
+        ("menu_view", lbl(app, "menu_view", "Présentation"), view),
+        ("menu_hosts", lbl(app, "menu_hosts", "Hôtes"), hosts),
+        ("menu_window", lbl(app, "menu_window", "Fenêtre"), window),
+        ("menu_help", lbl(app, "menu_help", "Aide"), help),
+    ]
+}
+
+#[tauri::command]
+fn get_menu(app: AppHandle, st: State<AppState>) -> Vec<(&'static str, String, Vec<Entry>)> {
+    let s = st.settings.lock().unwrap().clone();
+    menu_model(&app, &s)
+}
+
+#[tauri::command]
+fn menu_click(app: AppHandle, id: String) {
+    on_menu(&app, &id);
+}
+
+/// Native macOS menu bar built from `menu_model`.
+#[cfg(target_os = "macos")]
+fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
+    use tauri::menu::PredefinedMenuItem;
+    let mut bar = MenuBuilder::new(app);
+    for (key, title, entries) in menu_model(app, s) {
+        let sub = tauri::menu::Submenu::new(app, title, true)?;
+        for x in entries {
+            match x.id.as_str() {
+                "-" => sub.append(&PredefinedMenuItem::separator(app)?)?,
+                "@services" => sub.append(&PredefinedMenuItem::services(app, None)?)?,
+                "@hide" => sub.append(&PredefinedMenuItem::hide(app, None)?)?,
+                "@hide_others" => sub.append(&PredefinedMenuItem::hide_others(app, None)?)?,
+                "@show_all" => sub.append(&PredefinedMenuItem::show_all(app, None)?)?,
+                "@quit_app" => sub.append(&PredefinedMenuItem::quit(app, Some(&x.label))?)?,
+                "@undo" => sub.append(&PredefinedMenuItem::undo(app, None)?)?,
+                "@redo" => sub.append(&PredefinedMenuItem::redo(app, None)?)?,
+                "@cut" => sub.append(&PredefinedMenuItem::cut(app, None)?)?,
+                "@copy" => sub.append(&PredefinedMenuItem::copy(app, None)?)?,
+                "@paste" => sub.append(&PredefinedMenuItem::paste(app, None)?)?,
+                "@select_all" => sub.append(&PredefinedMenuItem::select_all(app, None)?)?,
+                "@fullscreen" => sub.append(&PredefinedMenuItem::fullscreen(app, None)?)?,
+                "@minimize" => sub.append(&PredefinedMenuItem::minimize(app, None)?)?,
+                "@maximize" => sub.append(&PredefinedMenuItem::maximize(app, None)?)?,
+                "@close_window" => sub.append(&PredefinedMenuItem::close_window(app, None)?)?,
+                id => sub.append(&MenuItem::with_id(app, id, &x.label, true, Some(x.accel.as_str()).filter(|k| !k.is_empty()))?)?,
+            }
+        }
+        // Native extras: window list in "Window", search field in "Help".
+        match key {
+            "menu_window" => sub.set_as_windows_menu_for_nsapp()?,
+            "menu_help" => sub.set_as_help_menu_for_nsapp()?,
+            _ => {}
+        }
+        bar = bar.item(&sub);
+    }
+    bar.build()
+}
+
+/// Rebuilds the native menu bar (macOS) and the tray menu after labels, settings or hosts change.
+fn refresh_menus(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let s = app.state::<AppState>().settings.lock().unwrap().clone();
+        if let Ok(m) = build_menu(app, &s) {
+            let _ = app.set_menu(m);
+        }
+    }
+    refresh_tray(app, &HostsDoc::load());
 }
 
 /// Tray menu = favourite hosts (or the first ones). Kept icon-only so it stays small next to the MacBook notch.
@@ -463,7 +519,71 @@ fn tray_menu(app: &AppHandle, doc: &HostsDoc) -> tauri::Result<Menu<tauri::Wry>>
 fn refresh_tray(app: &AppHandle, doc: &HostsDoc) {
     if let (Some(t), Ok(m)) = (app.tray_by_id("main"), tray_menu(app, doc)) {
         let _ = t.set_menu(Some(m));
+        // macOS tints the template icon itself; elsewhere swap white/black only when the panel changes.
+        if cfg!(not(target_os = "macos")) {
+            static LAST: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
+            let dark = panel_is_dark();
+            if LAST.swap(dark as u8, std::sync::atomic::Ordering::Relaxed) != dark as u8 {
+                if let Ok(i) = tray_icon(dark) {
+                    let _ = t.set_icon(Some(i));
+                }
+            }
+        }
     }
+}
+
+/// The tray glyph is black (macOS template); recoloured white for dark panels.
+fn tray_icon(dark: bool) -> tauri::Result<tauri::image::Image<'static>> {
+    let img = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+    if cfg!(target_os = "macos") || !dark {
+        return Ok(img);
+    }
+    let mut rgba = img.rgba().to_vec();
+    for px in rgba.chunks_mut(4) {
+        px[..3].fill(255);
+    }
+    Ok(tauri::image::Image::new_owned(rgba, img.width(), img.height()))
+}
+
+/// Is the taskbar / top panel dark? Windows: the taskbar follows the *system* theme, not the apps one.
+#[cfg(windows)]
+fn panel_is_dark() -> bool {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("reg")
+        .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "SystemUsesLightTheme"])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .output()
+        .map(|o| !String::from_utf8_lossy(&o.stdout).contains("0x1"))
+        .unwrap_or(true)
+}
+
+/// GNOME's top bar is dark in both modes; KDE panels follow the colour scheme (kdeglobals).
+#[cfg(target_os = "linux")]
+fn panel_is_dark() -> bool {
+    if !std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().contains("KDE") {
+        return true;
+    }
+    let cfg = std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| format!("{}/.config", std::env::var("HOME").unwrap_or_default()));
+    std::fs::read_to_string(format!("{cfg}/kdeglobals"))
+        .map(|s| kde_dark(&s))
+        .unwrap_or(true)
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn kde_dark(kdeglobals: &str) -> bool {
+    kdeglobals.lines().find_map(|l| l.strip_prefix("ColorScheme=")).map_or(true, |v| v.to_lowercase().contains("dark"))
+}
+
+#[cfg(target_os = "macos")]
+fn panel_is_dark() -> bool {
+    true
+}
+
+#[test]
+fn kde_scheme() {
+    assert!(kde_dark("[General]\nColorScheme=BreezeDark\n"));
+    assert!(!kde_dark("[General]\nColorScheme=BreezeLight\n"));
+    assert!(kde_dark("")); // unknown: Breeze's default panel is dark
 }
 
 fn on_menu(app: &AppHandle, id: &str) {
@@ -500,15 +620,21 @@ pub fn run() {
         .manage(syncd::SyncCtl::default())
         .setup(move |app| {
             let handle = app.handle().clone();
+            // Created here (create: false) so Windows/Linux get our own title bar: menus + Windows-style buttons.
+            let mut wc = app.config().app.windows[0].clone();
+            if cfg!(not(target_os = "macos")) {
+                wc.decorations = false; // Windows 11 keeps its rounded corners and shadow (DWM)
+                if cfg!(target_os = "linux") {
+                    // Rounded corners are drawn in CSS, so the corners must be see-through.
+                    wc.transparent = true;
+                    wc.background_color = None;
+                }
+            }
+            tauri::WebviewWindowBuilder::from_config(&handle, &wc)?.build()?;
             #[cfg(target_os = "macos")]
             app.set_menu(build_menu(&handle, &settings)?)?;
-            #[cfg(not(target_os = "macos"))]
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.remove_menu();
-            }
-            let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
             let tray = TrayIconBuilder::with_id("main")
-                .icon(icon)
+                .icon(tray_icon(true)?)
                 .icon_as_template(true)
                 .tooltip("Termix")
                 .menu(&tray_menu(&handle, &HostsDoc::load())?)
@@ -520,6 +646,7 @@ pub fn run() {
                 })
                 .build(app)?;
             tray.set_visible(settings.behavior.tray_icon)?;
+            refresh_tray(&handle, &HostsDoc::load()); // picks the white/black glyph for the panel
             spawn_prober(handle.clone());
             syncd::spawn(handle.clone());
             // Safety net: show the window even if the UI never reports ready.
@@ -536,6 +663,9 @@ pub fn run() {
         })
         .on_menu_event(|app, ev| on_menu(app, ev.id().as_ref()))
         .on_window_event(|w, ev| {
+            if let WindowEvent::ThemeChanged(_) = ev {
+                refresh_tray(w.app_handle(), &HostsDoc::load());
+            }
             if let WindowEvent::CloseRequested { api, .. } = ev {
                 let st = w.state::<AppState>();
                 let b = &st.settings.lock().unwrap().behavior;
@@ -547,7 +677,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            boot, app_ready, set_labels, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
+            boot, app_ready, set_labels, get_menu, menu_click, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
             ssh_connect, recent_sessions, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
             check_update, install_update,

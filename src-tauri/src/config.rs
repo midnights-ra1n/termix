@@ -193,6 +193,8 @@ impl Default for Behavior {
 pub fn default_keybindings() -> BTreeMap<String, String> {
     let m = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl+Shift" };
     [
+        ("new_tab", "T"),
+        ("quick_connect", "O"),
         ("new_host", "N"),
         ("close_pane", "W"),
         ("split_right", "D"),

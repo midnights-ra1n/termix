@@ -53,6 +53,35 @@ body:not([data-platform="macos"]) .traffic { display: none; }
 body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tabs { display: none; }
 .tb-mid { gap: 8px !important; }
 
+/* ---------- Windows/Linux title bar: same menus as macOS + Windows-style buttons (menubar.js) ---------- */
+body.menubar #app { grid-template-rows: var(--mb) var(--bar) minmax(0, 1fr); }
+:root { --mb: 32px; --win-r: 12px; } /* GNOME / libadwaita corner */
+:root[data-desktop*="KDE"] { --win-r: 8px; } /* Breeze */
+#menubar { grid-column: 1 / -1; position: relative; z-index: 11; display: flex; align-items: center; height: var(--mb); background: var(--scene); border-bottom: 1px solid var(--indigo); }
+.mb-icon { width: 16px; height: 16px; margin: 0 6px 0 12px; }
+.mb-menus { display: flex; gap: 1px; }
+.mb-title { height: 24px; padding: 0 9px; border: 0; border-radius: 6px; background: none; color: var(--mute); font-size: 12.5px; }
+.mb-title:hover, .mb-title.on { background: var(--indigo); color: var(--ink); }
+.mb-drop { position: absolute; top: calc(var(--mb) - 3px); min-width: 250px; max-height: calc(100vh - var(--mb) - 12px); overflow: auto; padding: 5px; display: flex; flex-direction: column;
+  background: var(--scene); border: 1px solid var(--brume); border-radius: 10px; box-shadow: 0 20px 40px -18px rgba(0, 0, 0, .6); animation: fade .12s var(--ease); }
+.mb-item { display: flex; align-items: center; justify-content: space-between; gap: 28px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: none; text-align: left; white-space: nowrap; }
+.mb-item:hover, .mb-item:focus-visible { background: var(--accent); color: var(--onAccent); outline: none; }
+.mb-key { color: var(--faint); font-size: 12px; }
+.mb-item:hover .mb-key, .mb-item:focus-visible .mb-key { color: inherit; opacity: .85; }
+.mb-sep { height: 1px; margin: 4px 8px; background: var(--indigo); }
+.wc { display: flex; align-self: stretch; }
+.wc button { width: 46px; border: 0; border-radius: 0; background: none; color: var(--ink); display: grid; place-items: center; }
+.wc button:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.wc button.close:hover { background: #C42B1C; color: #FFFFFF; }
+.wc span { display: grid; }
+.wc .restore, body.maximized .wc .max { display: none; }
+body.maximized .wc .restore { display: grid; }
+/* Linux: undecorated + transparent window, so the rounded corners and the thin edge are ours. Windows 11 rounds them itself. */
+html[data-platform="linux"], html[data-platform="linux"] body { background: transparent !important; }
+html[data-platform="linux"] #app { background: var(--bg); border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); border-radius: var(--win-r); overflow: hidden; }
+html[data-platform="linux"] .backdrop { border-radius: var(--win-r); }
+html[data-platform="linux"] body.maximized #app, html[data-platform="linux"] body.maximized .backdrop { border: 0; border-radius: 0; }
+
 /* ---------- sidebar ---------- */
 .search { padding: 12px 12px 8px; }
 .search input { width: 100%; height: var(--ctl); padding: 0 14px; border-radius: 10px; border: 1px solid var(--brume); background: var(--bg); }
