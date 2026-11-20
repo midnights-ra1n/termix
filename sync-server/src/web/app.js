@@ -20,6 +20,8 @@ function h(tag, attrs = {}, ...kids) {
   return el;
 }
 const app = () => document.getElementById("app");
+// crypto.randomUUID only exists on HTTPS or localhost; the server is often opened over plain HTTP on a LAN.
+const uuid = () => crypto.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16));
 const fmtDate = (ms) => (ms ? new Date(ms).toLocaleDateString(undefined, { dateStyle: "medium" }) : "");
 const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "");
 /** Page title, one-line description and the page's main action on the same line. */
@@ -57,6 +59,7 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 async function deriveKey(pass, saltB64) {
+  if (!crypto.subtle) throw new Error("The vault needs HTTPS (or localhost): browsers turn encryption off on plain HTTP");
   const base = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: unb64(saltB64), iterations: ROUNDS }, base,
     { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
@@ -174,7 +177,7 @@ async function hostsView(main) {
 
 function hostDialog(x) {
   const isNew = !x;
-  x = structuredClone(x || { id: crypto.randomUUID(), name: "", host: "", port: 22, user: "", key_path: "", key_id: "", description: "", icon: "server", tags: [], folder: null, favorite: false });
+  x = structuredClone(x || { id: uuid(), name: "", host: "", port: 22, user: "", key_path: "", key_id: "", description: "", icon: "server", tags: [], folder: null, favorite: false });
   const f = (k, attrs = {}) => h("input", { value: x[k] ?? "", ...attrs });
   const name = f("name"), host = f("host", { required: true }), port = f("port", { type: "number", min: 1, max: 65535 }), user = f("user");
   const desc = f("description"), tags = h("input", { value: (x.tags || []).join(", ") });
@@ -235,7 +238,7 @@ function keyDialog() {
       e.preventDefault();
       if (!pem.value.includes("PRIVATE KEY")) return (err.textContent = "This is not a private key");
       try {
-        await put(`key:${crypto.randomUUID()}`, { name: name.value.trim(), pub: pub.value.trim(), enc: await seal(pem.value.trim() + "\n") });
+        await put(`key:${uuid()}`, { name: name.value.trim(), pub: pub.value.trim(), enc: await seal(pem.value.trim() + "\n") });
         dlg.close(); render();
       } catch (y) { err.textContent = y.message; }
     } },

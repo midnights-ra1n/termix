@@ -170,13 +170,18 @@ async fn ssh_connect(
     app: AppHandle,
     st: State<'_, AppState>,
     host_id: String,
+    // Quick connect: an unsaved host (id "quick:user@host:port") passed whole instead of looked up.
+    host: Option<config::Host>,
     cols: u32,
     rows: u32,
     password: Option<String>,
     tmux: Option<String>,
     on_data: Channel<InvokeResponseBody>,
 ) -> R<String> {
-    let host = HostsDoc::load().hosts.into_iter().find(|h| h.id == host_id).ok_or("hôte introuvable")?;
+    let host = match host.filter(|h| h.id == host_id && h.id.starts_with("quick:")) {
+        Some(h) => h,
+        None => HostsDoc::load().hosts.into_iter().find(|h| h.id == host_id).ok_or("hôte introuvable")?,
+    };
     let (sock, keepalive) = {
         let s = st.settings.lock().unwrap();
         (s.ssh.agent_socket.clone(), s.ssh.keepalive_secs)
@@ -208,6 +213,12 @@ async fn ssh_connect(
     config::recent_push(&host_id);
     refresh_tray(&app, &HostsDoc::load());
     Ok(id)
+}
+
+/// Host ids (or "quick:…" specs) of the latest connections, newest first.
+#[tauri::command]
+fn recent_sessions() -> Vec<String> {
+    config::recent_load()
 }
 
 async fn sess(st: &State<'_, AppState>, id: &str) -> R<Arc<ssh::Session>> {
@@ -537,10 +548,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             boot, app_ready, set_labels, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
-            ssh_connect, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
+            ssh_connect, recent_sessions, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
             check_update, install_update,
-            syncd::sync_status, syncd::sync_set_mode, syncd::sync_login, syncd::sync_logout, syncd::sync_unlock, syncd::sync_lock, syncd::sync_now,
+            syncd::sync_status, syncd::sync_set_mode, syncd::sync_login, syncd::sync_logout, syncd::sync_unlock, syncd::sync_lock, syncd::sync_now, syncd::sync_set_interval, syncd::sync_resolve,
             syncd::p2p_pair_start, syncd::p2p_pair, syncd::p2p_forget, syncd::sync_set_workspace, syncd::sync_workspaces,
             syncd::sync_keys, syncd::sync_key_import, syncd::sync_key_delete
         ])

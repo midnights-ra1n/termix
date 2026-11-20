@@ -40,7 +40,7 @@ svg { flex: none; }
 body.no-sidebar #sidebar, body.no-panel #panel { border: 0; }
 
 /* Whole top strip is a drag handle (Tauri drag region), buttons stay clickable. */
-#titlebar { grid-column: 1 / -1; display: grid; grid-template-columns: max(var(--sw), var(--tl-min)) minmax(0, 1fr) max(var(--pw), 96px); transition: grid-template-columns .35s var(--ease); border-bottom: 1px solid var(--indigo); }
+#titlebar { grid-column: 1 / -1; display: grid; grid-template-columns: max(var(--sw), var(--tl-min)) minmax(0, 1fr) max(var(--pw), 128px); transition: grid-template-columns .35s var(--ease); border-bottom: 1px solid var(--indigo); }
 #titlebar > div { display: flex; align-items: center; gap: 2px; min-width: 0; padding: 0 8px; height: var(--bar); }
 .tb-left, .tb-right { background: var(--scene); }
 .tb-left { border-right: 1px solid var(--indigo); }
@@ -95,6 +95,10 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 .tab-label { border: 0; background: none; padding: 0 4px 0 12px; height: 100%; color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab.on { background: var(--indigo); }
 .tab.on .tab-label { color: var(--ink); font-weight: 500; }
+#sync-status.warn { color: var(--warn); }
+#sync-status.error { color: var(--error); }
+.conflict-diff { margin: 4px 0 0; padding: 0; list-style: none; font: 400 11px/1.5 var(--mono); color: var(--mute); }
+.conflict-diff li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon-btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 9999px; background: none; color: var(--mute); flex: none; }
 .icon-btn:hover { background: var(--indigo); color: var(--ink); }
 .tab .icon-btn { width: 24px; height: 24px; }
@@ -109,9 +113,11 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 .split.h > .gutter { width: 8px; cursor: col-resize; }
 .split.v > .gutter { height: 8px; cursor: row-resize; }
 .gutter:hover { background: var(--brume); border-radius: 9999px; }
-.pane { flex: 1; display: flex; min-width: 0; min-height: 0; border-radius: 12px; border: 1px solid transparent; overflow: hidden; background: var(--term-bg, var(--bg)); }
+.pane { flex: 1; display: flex; min-width: 0; min-height: 0; border-radius: 12px; border: 2px solid transparent; overflow: hidden; background: var(--term-bg, var(--bg)); }
 .split .pane { border-color: var(--indigo); }
-.split .pane.focused { border-color: var(--brume); }
+/* The pane that gets the keyboard, split or not; brighter while it actually has focus. */
+.pane.focused { border-color: var(--brume); }
+.pane.focused:focus-within { border-color: color-mix(in srgb, var(--focus) 75%, transparent); }
 .pane.drop { border-color: var(--accent) !important; }
 .term { flex: 1; padding: var(--term-pad, 8px) calc(var(--term-pad, 8px) / 2) calc(var(--term-pad, 8px) / 2) calc(var(--term-pad, 8px) * 1.5); min-width: 0; min-height: 0; overflow: hidden; }
 .term .xterm { height: 100%; }
@@ -296,3 +302,8 @@ input.switch:checked::after { transform: translateX(16px); background: var(--onA
 .pair-code:empty { display: none; }
 .welcome .resume { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
 .welcome .resume .btn { display: inline-flex; align-items: center; gap: 8px; }
+.welcome .recent { list-style: none; margin: 24px auto 0; padding: 0; width: min(420px, 90vw); display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.welcome .recent:empty { display: none; }
+.welcome .recent-title { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--faint); padding: 0 12px 6px; }
+.welcome .recent .row { width: 100%; }
+.welcome .recent .mute { font-size: 12px; }

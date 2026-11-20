@@ -4,7 +4,7 @@
 @font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url(/fonts/plex-mono-400.woff2) format("woff2"); }
 
 :root {
-  --bg: #36415A; --scene: #3E4A64; --vide: #2B3448; --line: rgba(238, 238, 238, .09);
+  --bg: #1B2030; --scene: #212738; --vide: #151A26; --line: rgba(238, 238, 238, .09);
   --ink: #EEEEEE; --mute: #CDD3DD; --faint: #B3BBC8;
   --accent: #5D866C; --focus: #9CCBA9; --error: #F0A0A0;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -44,7 +44,7 @@ input, select { background: var(--vide); border: 1px solid var(--line); border-r
 input[type=checkbox] { min-height: auto; width: 16px; height: 16px; accent-color: var(--accent); }
 label.check { display: flex; align-items: center; gap: 8px; }
 .btn { border: 1px solid var(--line); background: var(--scene); border-radius: 10px; padding: 0 16px; min-height: 36px; cursor: pointer; transition: background-color .12s ease; }
-.btn:hover { background: #46546F; }
+.btn:hover { background: #2C3447; }
 .btn.primary { background: var(--ink); color: var(--vide); border-color: transparent; font-weight: 500; flex: none; }
 .btn.primary:hover { background: #FFFFFF; }
 .btn.danger { color: var(--error); }
@@ -71,7 +71,7 @@ td.actions .btn.danger:hover { color: var(--error); }
 .card { background: var(--scene); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-top: 16px; display: grid; gap: 12px; }
 .card h2 { font-size: 15px; font-weight: 600; margin: 0; }
 dialog { background: var(--scene); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 24px; width: min(560px, calc(100% - 32px)); }
-dialog::backdrop { background: rgba(20, 24, 34, .6); }
+dialog::backdrop { background: rgba(10, 12, 20, .6); }
 dialog form { display: grid; gap: 12px; }
 textarea { background: var(--vide); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; color: var(--ink); font: 12px/1.5 var(--mono); min-height: 160px; resize: vertical; }
 .empty { color: var(--faint); padding: 24px 0; }

@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Channel } from "@tauri-apps/api/core";
 import { Menu } from "@tauri-apps/api/menu";
 import { listen } from "@tauri-apps/api/event";
-import { S, h, icon, invoke, modal, field, toast, statusDot } from "./ui.js";
+import { S, h, icon, invoke, modal, field, toast, statusDot, uid, saveHosts } from "./ui.js";
 import { t as tr } from "./i18n.js";
 import { Suggest } from "./suggest.js";
 import logo from "../assets/icon-rounded.svg";
@@ -49,7 +49,8 @@ class Pane {
     input.oninput = draw;
     input.onkeydown = (e) => { if (e.key === "Enter") list.querySelector("button")?.click(); };
     draw();
-    this.el.replaceChildren(h("div.picker", {}, h("h3", {}, tr("open_conn")), input, list));
+    this.el.replaceChildren(h("div.picker", {}, h("h3", {}, tr("open_conn")), input, list,
+      h("button.btn.small", { type: "button", onclick: () => quickConnect((x) => this.connect(x)) }, tr("quick_connect"))));
     this.focusTarget = input;
   }
   async connect(host, password = null) {
@@ -67,7 +68,7 @@ class Pane {
     const ch = new Channel();
     ch.onmessage = (buf) => term.write(new Uint8Array(buf));
     try {
-      this.session = await invoke("ssh_connect", { hostId: host.id, cols: 80, rows: 24, password, tmux: this.tmux, onData: ch });
+      this.session = await invoke("ssh_connect", { hostId: host.id, host: host.id.startsWith("quick:") ? host : null, cols: 80, rows: 24, password, tmux: this.tmux, onData: ch });
     } catch (e) {
       term.dispose();
       if (String(e).includes("NEED_PASSWORD")) return this.askPassword(host);
@@ -227,9 +228,51 @@ export function openWorkspace(ws) {
 
 function updateTabTitles() { render(); }
 
+/** An unsaved host from "user@host:port" (user and port optional), or null. */
+export function quickHost(spec) {
+  const m = spec.trim().match(/^(?:([^@\s]+)@)?([^\s@:]+|\[[^\]\s]+\])(?::(\d{1,5}))?$/);
+  const port = m && Number(m[3] || 22);
+  if (!m || port < 1 || port > 65535) return null;
+  const host = m[2].replace(/^\[|\]$/g, ""), user = m[1] || "";
+  const name = `${user ? user + "@" : ""}${m[2]}${port !== 22 ? ":" + port : ""}`;
+  return { id: "quick:" + name, name, host, port, user, key_path: "", key_id: "", description: "", icon: "terminal", tags: [], folder: null, favorite: false, tmux: "" };
+}
+
+/** Connect to user@host:port without saving it first (or saving it on the way). */
+export async function quickConnect(open = (x) => openHost(x)) {
+  const input = h("input", { placeholder: "user@example.com:22", autofocus: true, "aria-label": tr("quick_connect") });
+  const save = h("input", { type: "checkbox", className: "switch" });
+  const err = h("p.error.small", { role: "alert" });
+  const host = await modal(tr("quick_connect"), (close) => h("form.grid", { onsubmit: (e) => {
+      e.preventDefault();
+      const x = quickHost(input.value);
+      if (!x) return (err.textContent = tr("quick_bad"));
+      close(x);
+    } },
+    h("div.span2", {}, field(tr("quick_target"), input, tr("quick_hint"))),
+    h("label.toggle.span2", {}, h("span", {}, tr("quick_save")), save), h("div.span2", {}, err),
+    h("footer.span2", {}, h("button.btn", { type: "button", onclick: () => close(null) }, tr("cancel")), h("button.btn.primary", { type: "submit" }, tr("connect")))));
+  if (!host) return;
+  if (save.checked) {
+    Object.assign(host, { id: uid(), name: host.host, icon: "server" });
+    S.hosts.hosts.push(host);
+    await saveHosts().catch((e) => toast(String(e), "error"));
+  }
+  open(host);
+}
+
 function welcome() {
   const resume = h("div.resume");
-  const el = h("div.welcome", {}, h("h1", {}, h("img", { src: logo, alt: "" }), "Termix"), h("p", {}, tr("welcome")), resume);
+  const recent = h("ul.recent", { "aria-label": tr("recent_sessions") });
+  const el = h("div.welcome", {}, h("h1", {}, h("img", { src: logo, alt: "" }), "Termix"), h("p", {}, tr("welcome")),
+    h("div.resume", {}, h("button.btn.primary", { onclick: () => quickConnect() }, icon("terminal", 14), tr("quick_connect"))), recent, resume);
+  // The last 5 sessions: saved hosts that still exist, and quick connects.
+  invoke("recent_sessions").then((ids) => {
+    const list = ids.map((id) => (id.startsWith("quick:") ? quickHost(id.slice(6)) : S.hosts.hosts.find((x) => x.id === id))).filter(Boolean).slice(0, 5);
+    if (list.length) recent.replaceChildren(h("li.recent-title", {}, tr("recent_sessions")), ...list.map((x) => h("li", {},
+      h("button.row.host", { onclick: () => newTab(x) }, statusDot(x.id), icon(x.icon || "server", 15), h("span.name", {}, x.name),
+        h("span.mute.mono", {}, `${x.user ? x.user + "@" : ""}${x.host}`)))));
+  }).catch(() => {});
   invoke("sync_workspaces").then((list) => resume.replaceChildren(...list.slice(0, 3).map((ws) =>
     h("button.btn", { onclick: () => openWorkspace(ws) }, icon("terminal", 14), tr("resume_ws", ws.name, ws.tabs.length))))).catch(() => {});
   el.addEventListener("dragover", (e) => e.dataTransfer.types.includes("text/plain") && e.preventDefault());
@@ -280,6 +323,8 @@ export function focusPane(p) {
 }
 
 export const focused = () => current?.focused || null;
+/** Gives the keyboard back to the focused pane (terminal, or its host picker). */
+export const focusTerminal = () => current?.focused?.focusTarget?.focus();
 
 /** The host's own tmux choice, else the global setting. */
 export const wantsTmux = (host) => host.tmux === "on" || (host.tmux !== "off" && S.settings.terminal.tmux);
