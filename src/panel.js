@@ -1,7 +1,7 @@
 // Right panel: server stats + SFTP browser for the active session.
 import { open as openDialog, save as saveDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { S, h, icon, invoke, toast, fmtBytes, fmtUptime, modal, field, osIcon, statusDot } from "./ui.js";
-import { activeSession, events } from "./panes.js";
+import { activeSession, events, newTab } from "./panes.js";
 import { t } from "./i18n.js";
 
 let tab = "stats";
@@ -12,7 +12,7 @@ let cwd = "";
 
 export function initPanel() {
   const tabsEl = document.getElementById("panel-tabs");
-  tabsEl.replaceChildren(...[["stats", t("stats")], ["sftp", t("sftp")]].map(([k, l]) =>
+  tabsEl.replaceChildren(...[["stats", t("stats")], ["sftp", t("sftp")], ["docker", t("docker")], ["tmux", t("tmux")]].map(([k, l]) =>
     h("button.seg" + (k === tab ? ".on" : ""), { role: "tab", "aria-selected": String(k === tab), onclick: () => { tab = k; initPanel(); refresh(); } }, l)));
 }
 events.addEventListener("focus", () => refresh());
@@ -25,6 +25,8 @@ function refresh() {
   if (!S.settings.appearance.right_panel) return;
   if (!pane) return body.replaceChildren(h("p.empty", {}, t("no_session")));
   if (tab === "stats") { stats(); timer = setInterval(stats, 3000); }
+  else if (tab === "docker") { docker(); timer = setInterval(docker, 5000); }
+  else if (tab === "tmux") { tmux(); timer = setInterval(tmux, 5000); }
   else sftp(cwd);
 }
 
@@ -128,6 +130,60 @@ async function download(id, dir, e) {
   if (!local) return;
   try { await invoke("sftp_download", { id, remote: join(dir, e.name), local }); toast(t("downloaded", e.name), "success"); }
   catch (er) { toast(String(er), "error"); }
+}
+
+// ---------- docker ----------
+
+const DOT = { running: "up", restarting: "ping", paused: "ping", dead: "down" };
+
+async function docker() {
+  const p = pane;
+  if (!p?.session || document.hidden) return;
+  const body = document.getElementById("panel-body");
+  let d;
+  try { d = await invoke("docker_ps", { id: p.session }); } catch (e) { return body.replaceChildren(h("p.error", {}, String(e))); }
+  if (p !== pane || tab !== "docker") return;
+  if (!d.installed) return body.replaceChildren(h("p.empty", {}, t("no_docker")));
+  if (d.error) return body.replaceChildren(h("p.error.small", {}, d.error), h("p.mute.small", {}, t("docker_perm")));
+  const up = d.containers.filter((c) => c.state === "running").length;
+  body.replaceChildren(
+    h("div.list-head", {}, h("span", {}, t("containers")), h("span.mono.mute", {}, `${up} / ${d.containers.length}`)),
+    d.containers.length
+      ? h("ul.items", { role: "list" }, ...d.containers.map((c) => h("li.item", { title: `${c.name} · ${c.status}` },
+        h("span.status" + (DOT[c.state] ? "." + DOT[c.state] : ""), { role: "img", "aria-label": c.state }),
+        h("div.item-text", {}, h("span.item-name", {}, c.name), h("span.item-meta.mono", {}, `${c.image} · ${c.status}`)))))
+      : h("p.empty", {}, t("no_containers")));
+}
+
+// ---------- tmux ----------
+
+async function tmux() {
+  const p = pane;
+  if (!p?.session || document.hidden) return;
+  const body = document.getElementById("panel-body");
+  let list;
+  try { list = await invoke("tmux_list", { id: p.session }); } catch (e) { return body.replaceChildren(h("p.error", {}, String(e))); }
+  if (p !== pane || tab !== "tmux") return;
+  if (!list) return body.replaceChildren(h("p.empty", {}, t("no_tmux")));
+  const now = Date.now() / 1000;
+  const kill = (s) => h("button.icon-btn", { "aria-label": `${t("tmux_kill")} ${s.name}`, title: t("tmux_kill"), onclick: async () => {
+    if (!(await confirm(t("tmux_confirm_kill", s.name), { kind: "warning" }))) return;
+    invoke("tmux_kill", { id: p.session, name: s.name }).then(tmux, (e) => toast(String(e), "error"));
+  } }, icon("trash", 15));
+  body.replaceChildren(
+    h("div.list-head", {}, h("span", {}, t("tmux_sessions")), h("span.mono.mute", {}, String(list.length))),
+    list.length
+      ? h("ul.items", { role: "list" }, ...list.map((s) => {
+        const here = s.name === p.tmux;
+        const meta = [s.command, t("tmux_windows", s.windows), s.activity ? t("ago", fmtUptime(Math.max(60, now - s.activity))) : ""].filter(Boolean).join(" · ");
+        return h("li.item", {},
+          h("button.item-main", { disabled: here, title: here ? t("tmux_here") : t("tmux_resume"), onclick: () => newTab(p.host, s.name) },
+            icon("terminal", 15),
+            h("div.item-text", {}, h("span.item-name.mono", {}, s.name), h("span.item-meta", {}, here ? t("tmux_here") : s.attached ? `${t("tmux_attached")} · ${meta}` : meta))),
+          !here && kill(s));
+      }))
+      : h("p.empty", {}, t("no_tmux_sessions")),
+    h("p.mute.small", {}, S.settings.terminal.tmux ? t("tmux_hint") : t("tmux_off_hint")));
 }
 
 export const refreshPanel = refresh;

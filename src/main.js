@@ -166,6 +166,7 @@ async function openSettings(section = "general") {
     scrollback: num(s.terminal.scrollback, 0, 200000, 1000),
     copy_on_select: sw(s.terminal.copy_on_select),
     suggestions: sw(s.terminal.suggestions),
+    tmux: sw(s.terminal.tmux),
     tray_icon: sw(s.behavior.tray_icon),
     run_in_background: sw(s.behavior.run_in_background),
     check_updates: sw(s.behavior.check_updates),
@@ -220,7 +221,7 @@ async function openSettings(section = "general") {
       h("div.span2", {}, field(t("term_font"), f.font_family)),
       field(t("size"), f.font_size), field(t("line_height"), f.line_height),
       field(t("cursor"), f.cursor_style), field(t("scrollback"), f.scrollback)),
-      h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint"))),
+      h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint")), row(t("tmux_setting"), f.tmux, t("tmux_setting_hint"))),
       h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => { clearLocalHistory(); toast(t("history_cleared"), "success"); } }, t("clear_history")))],
     ssh: [t("set_ssh"), h("div.form-grid", {}, h("div.span2", {}, field(t("agent_socket"), f.agent_socket, t("agent_hint"))), agents,
       field(t("keepalive"), f.keepalive)),
@@ -249,7 +250,7 @@ async function openSettings(section = "general") {
 
   const n = (el, d) => (el.value !== "" && Number.isFinite(+el.value) ? +el.value : d);
   Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.value, ui_font_size: n(f.ui_font_size, 13) });
-  Object.assign(s.terminal, { font_family: f.font_family.value, font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked });
+  Object.assign(s.terminal, { font_family: f.font_family.value, font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked });
   Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
   Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30) });
   s.keybindings = kb;

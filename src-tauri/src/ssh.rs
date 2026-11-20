@@ -231,12 +231,16 @@ pub async fn open_shell(
     handle: Handle<Client>,
     cols: u32,
     rows: u32,
+    tmux: Option<&str>,
     on_data: impl Fn(Vec<u8>) + Send + 'static,
     on_close: impl FnOnce() + Send + 'static,
 ) -> Result<Arc<Session>> {
     let mut ch = handle.channel_open_session().await?;
     ch.request_pty(false, "xterm-256color", cols, rows, 0, 0, &[]).await?;
-    ch.request_shell(false).await?;
+    match tmux {
+        Some(name) => ch.exec(false, tmux_cmd(name)?).await?,
+        None => ch.request_shell(false).await?,
+    }
     let (tx, mut rx) = mpsc::unbounded_channel::<Cmd>();
     let handle = Arc::new(handle);
     let h2 = handle.clone();
@@ -435,6 +439,137 @@ mod tests {
         assert_eq!((s.hostname.as_str(), s.os_id.as_str()), ("pve-31", "debian"));
         assert_eq!(s.os_name, "Debian GNU/Linux 12 (bookworm)");
         assert_eq!((s.kernel.as_str(), s.uptime_secs), ("Linux 6.8.12", 3600));
+    }
+}
+
+// ---------- tmux: shells that survive the SSH connection ----------
+
+/// tmux session names RustTerm can pass to a remote shell without quoting.
+pub fn valid_tmux_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Attach the session, creating it if needed (mouse on so the wheel scrolls tmux history);
+/// without tmux on the server, a plain login shell.
+pub fn tmux_cmd(name: &str) -> Result<String> {
+    if !valid_tmux_name(name) {
+        bail!("nom de session tmux invalide : {name}");
+    }
+    Ok(format!(r#"sh -c 'command -v tmux >/dev/null 2>&1 && exec tmux new-session -A -s {name} \; set-option mouse on; exec "${{SHELL:-sh}}" -l'"#))
+}
+
+pub const TMUX_LS_CMD: &str = r##"sh -c 'command -v tmux >/dev/null 2>&1 || { echo NOTMUX; exit 0; }; tmux ls -F "#{session_name}|#{session_windows}|#{session_attached}|#{session_activity}|#{pane_current_command}" 2>/dev/null; true'"##;
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct TmuxSession {
+    pub name: String,
+    pub windows: u32,
+    pub attached: bool,
+    pub activity: u64,
+    pub command: String,
+}
+
+/// `None` when tmux is not installed on the server.
+pub fn parse_tmux(raw: &str) -> Option<Vec<TmuxSession>> {
+    if raw.lines().any(|l| l.trim() == "NOTMUX") {
+        return None;
+    }
+    let mut v: Vec<TmuxSession> = raw
+        .lines()
+        .filter_map(|l| {
+            // From the right: only the session name may contain '|'.
+            let mut f = l.rsplitn(5, '|');
+            let (command, activity, attached, windows, name) = (f.next()?, f.next()?, f.next()?, f.next()?, f.next()?);
+            Some(TmuxSession {
+                name: name.into(),
+                windows: windows.parse().ok()?,
+                attached: attached != "0",
+                activity: activity.parse().unwrap_or(0),
+                command: command.into(),
+            })
+        })
+        .collect();
+    v.sort_by(|a, b| b.activity.cmp(&a.activity));
+    Some(v)
+}
+
+pub fn tmux_kill_cmd(name: &str) -> Result<String> {
+    if !valid_tmux_name(name) {
+        bail!("nom de session tmux invalide : {name}");
+    }
+    Ok(format!("sh -c 'tmux kill-session -t ={name} 2>&1'"))
+}
+
+// ---------- docker containers ----------
+
+/// Falls back to passwordless sudo when the user is not in the docker group.
+pub const DOCKER_PS_CMD: &str = r#"sh -c 'command -v docker >/dev/null 2>&1 || { echo NODOCKER; exit 0; }; F="{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}"; docker ps -a --format "$F" 2>&1 || sudo -n docker ps -a --format "$F" 2>/dev/null; true'"#;
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Container {
+    pub name: String,
+    pub image: String,
+    pub state: String,
+    pub status: String,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Docker {
+    pub installed: bool,
+    pub containers: Vec<Container>,
+    /// Daemon/permission error when no container could be listed.
+    pub error: String,
+}
+
+pub fn parse_docker(raw: &str) -> Docker {
+    if raw.lines().any(|l| l.trim() == "NODOCKER") {
+        return Docker { installed: false, containers: vec![], error: String::new() };
+    }
+    let (mut containers, mut errors) = (vec![], vec![]);
+    for l in raw.lines().filter(|l| !l.trim().is_empty()) {
+        let f: Vec<&str> = l.splitn(4, '|').collect();
+        match f[..] {
+            [name, image, state, status] => containers.push(Container { name: name.into(), image: image.into(), state: state.into(), status: status.into() }),
+            _ => errors.push(l.trim()),
+        }
+    }
+    let rank = |s: &str| match s { "running" => 0, "restarting" | "paused" => 1, _ => 2 };
+    containers.sort_by(|a, b| rank(&a.state).cmp(&rank(&b.state)).then_with(|| a.name.cmp(&b.name)));
+    let error = if containers.is_empty() { errors.join("\n") } else { String::new() };
+    Docker { installed: true, containers, error }
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+
+    #[test]
+    fn tmux_names_are_checked_before_reaching_the_shell() {
+        assert!(tmux_cmd("rt-a1b2_C").unwrap().contains("new-session -A -s rt-a1b2_C"));
+        for bad in ["", "a b", "x';rm -rf ~'", "a;b", "$(id)"] {
+            assert!(tmux_cmd(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn parses_tmux_ls() {
+        assert_eq!(parse_tmux("NOTMUX\n"), None);
+        assert_eq!(parse_tmux("").unwrap(), vec![]);
+        let v = parse_tmux("main|2|1|1700000000|vim\nrt-x|1|0|1700000500|htop\n").unwrap();
+        assert_eq!(v[0], TmuxSession { name: "rt-x".into(), windows: 1, attached: false, activity: 1700000500, command: "htop".into() });
+        assert!(v[1].attached);
+    }
+
+    #[test]
+    fn parses_docker_ps() {
+        assert!(!parse_docker("NODOCKER\n").installed);
+        let d = parse_docker("web|nginx:1.27|exited|Exited (0) 2 hours ago\ndb|postgres:16|running|Up 3 days\n");
+        assert_eq!(d.containers.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["db", "web"]);
+        assert_eq!(d.error, "");
+        let denied = parse_docker("permission denied while trying to connect to the Docker daemon socket\n");
+        assert!(denied.installed && denied.containers.is_empty() && denied.error.starts_with("permission denied"));
+        // sudo fallback succeeded after the docker error line
+        assert_eq!(parse_docker("permission denied\napp|img|running|Up 1 minute\n").containers.len(), 1);
     }
 }
 

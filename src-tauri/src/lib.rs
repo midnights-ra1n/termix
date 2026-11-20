@@ -164,6 +164,7 @@ async fn ssh_connect(
     cols: u32,
     rows: u32,
     password: Option<String>,
+    tmux: Option<String>,
     on_data: Channel<InvokeResponseBody>,
 ) -> R<String> {
     let host = HostsDoc::load().hosts.into_iter().find(|h| h.id == host_id).ok_or("hôte introuvable")?;
@@ -179,6 +180,7 @@ async fn ssh_connect(
         handle,
         cols,
         rows,
+        tmux.as_deref(),
         move |d| {
             let _ = on_data.send(InvokeResponseBody::Raw(d));
         },
@@ -231,6 +233,25 @@ async fn ssh_stats(st: State<'_, AppState>, id: String) -> R<ssh::Stats> {
 async fn ssh_history(st: State<'_, AppState>, id: String) -> R<Vec<String>> {
     let s = sess(&st, &id).await?;
     Ok(ssh::parse_history(&ssh::exec(&s.handle, ssh::HISTORY_CMD).await.map_err(e)?))
+}
+
+#[tauri::command]
+async fn docker_ps(st: State<'_, AppState>, id: String) -> R<ssh::Docker> {
+    let s = sess(&st, &id).await?;
+    Ok(ssh::parse_docker(&ssh::exec(&s.handle, ssh::DOCKER_PS_CMD).await.map_err(e)?))
+}
+
+#[tauri::command]
+async fn tmux_list(st: State<'_, AppState>, id: String) -> R<Option<Vec<ssh::TmuxSession>>> {
+    let s = sess(&st, &id).await?;
+    Ok(ssh::parse_tmux(&ssh::exec(&s.handle, ssh::TMUX_LS_CMD).await.map_err(e)?))
+}
+
+#[tauri::command]
+async fn tmux_kill(st: State<'_, AppState>, id: String, name: String) -> R<()> {
+    let s = sess(&st, &id).await?;
+    let out = ssh::exec(&s.handle, &ssh::tmux_kill_cmd(&name).map_err(e)?).await.map_err(e)?;
+    if out.trim().is_empty() { Ok(()) } else { Err(out.trim().to_string()) }
 }
 
 #[tauri::command]
@@ -505,7 +526,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             boot, app_ready, set_labels, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
-            ssh_connect, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history,
+            ssh_connect, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
             check_update, install_update
         ])

@@ -46,6 +46,8 @@ pub struct Terminal {
     pub copy_on_select: bool,
     /// Inline command predictions from history (→ to accept).
     pub suggestions: bool,
+    /// Open shells inside tmux (when installed on the server) so jobs survive a disconnect.
+    pub tmux: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -98,6 +100,7 @@ impl Default for Terminal {
             scrollback: 10000,
             copy_on_select: false,
             suggestions: true,
+            tmux: true,
         }
     }
 }

@@ -7,6 +7,7 @@ Terminal SSH léger et personnalisable : Rust (Tauri v2, russh) + xterm.js.
 - Auth : agent SSH (Bitwarden, 1Password, KeePassXC, Proton Pass, Secretive… détecté via `~/.ssh/config` et votre shell), clé, mot de passe (trousseau du système)
 - Onglets et splits droite/gauche/haut/bas, raccourcis personnalisables par plateforme
 - Panneau latéral : SFTP (parcourir, envoyer, télécharger, créer, supprimer) et stats (CPU, mémoire, disque, réseau, load average)
+- Panneau Docker (conteneurs et leur état, si Docker est installé sur le serveur) et tmux : les shells tournent dans tmux et survivent à la déconnexion, reprise d'une session depuis le panneau
 - Thèmes : Midnights (nuit/aube), Nord, Dracula, Solarized, Gruvbox, Système + thèmes perso
 - Barre des menus macOS native, icône tray native (macOS, GNOME, KDE, Windows), exécution en arrière-plan (optionnelles)
 - Mises à jour auto/manuelles depuis les releases GitHub (canaux stable, beta, nightly)

@@ -38,6 +38,7 @@ class Pane {
     this.picker();
   }
   picker() {
+    this.tmux = undefined; // a new host gets its own tmux session
     const list = h("div.picker-list");
     const input = h("input", { placeholder: tr("search_host"), "aria-label": tr("search_host") });
     const draw = () => {
@@ -53,6 +54,8 @@ class Pane {
   }
   async connect(host, password = null) {
     this.host = host;
+    // Kept across reconnects (Enter after a drop) so the same tmux session is reattached.
+    if (this.tmux === undefined) this.tmux = S.settings.terminal.tmux ? "rt-" + crypto.randomUUID().slice(0, 8) : null;
     this.el.replaceChildren(h("div.connecting", { role: "status" }, h("span.dot"), tr("connecting", host.name)));
     const t = S.settings.terminal;
     const term = new Terminal({
@@ -65,7 +68,7 @@ class Pane {
     const ch = new Channel();
     ch.onmessage = (buf) => term.write(new Uint8Array(buf));
     try {
-      this.session = await invoke("ssh_connect", { hostId: host.id, cols: 80, rows: 24, password, onData: ch });
+      this.session = await invoke("ssh_connect", { hostId: host.id, cols: 80, rows: 24, password, tmux: this.tmux, onData: ch });
     } catch (e) {
       term.dispose();
       if (String(e).includes("NEED_PASSWORD")) return this.askPassword(host);
@@ -203,8 +206,9 @@ function welcome() {
   return el;
 }
 
-export function newTab(host = null) {
+export function newTab(host = null, tmux = undefined) {
   const p = new Pane();
+  p.tmux = tmux;
   const tab = { root: p, focused: p, title() { const l = leaves(this.root); const n = l[0].host?.name || tr("new_tab"); return l.length > 1 ? `${n} +${l.length - 1}` : n; } };
   tabs.push(tab);
   selectTab(tab);

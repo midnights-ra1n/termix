@@ -38,6 +38,7 @@ cursor_blink = true
 scrollback = 10000
 copy_on_select = false
 suggestions = true           # prédiction des commandes (texte grisé)
+tmux = true                  # shell dans tmux (si installé sur le serveur) : survit à la déconnexion
 
 [behavior]
 tray_icon = true             # icône barre des menus (macOS) / zone de notification (GNOME, KDE, Windows)

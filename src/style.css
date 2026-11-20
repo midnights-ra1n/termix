@@ -138,8 +138,8 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 .dot-end { color: var(--accent2); }
 
 /* ---------- right panel ---------- */
-.segmented { display: flex; gap: 2px; padding: 2px; border-radius: 9999px; background: var(--bg); flex: 1; max-width: 180px; }
-.seg { flex: 1; border: 0; background: none; border-radius: 9999px; height: 26px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--mute); }
+.segmented { display: flex; gap: 2px; padding: 2px; border-radius: 9999px; background: var(--bg); flex: 1; min-width: 0; }
+.seg { flex: 1 1 auto; min-width: 0; padding: 0 8px; border: 0; background: none; border-radius: 9999px; height: 26px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--mute); }
 .seg.on { background: var(--brume); color: var(--ink); }
 #panel-body { flex: 1; overflow: auto; padding: 12px; user-select: text; -webkit-user-select: text; display: flex; flex-direction: column; gap: 12px; }
 .host-card { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 16px; background: var(--bg); }
@@ -171,6 +171,21 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 .files .row { min-height: 28px; padding-left: 8px; }
 .files .row svg { color: var(--faint); }
 .files .size { font-size: 11px; }
+
+/* docker containers, tmux sessions */
+.list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px; font-weight: 500; }
+.items { list-style: none; margin: 0 -4px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.item { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 8px; border-radius: 10px; }
+.item:has(.item-main) { padding: 0 4px 0 0; }
+.item:hover { background: var(--indigo); }
+.item-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 4px 8px; min-height: 40px; border-radius: 10px; }
+.item-main svg { color: var(--faint); }
+.item-main:disabled { cursor: default; }
+.item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.item-name, .item-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-meta { font-size: 12px; color: var(--faint); }
+.item .icon-btn { opacity: 0; }
+.item:hover .icon-btn, .item:focus-within .icon-btn { opacity: 1; }
 
 /* ---------- modal / forms ---------- */
 .backdrop { position: fixed; inset: 0; background: color-mix(in srgb, var(--vide) 60%, transparent); display: grid; place-items: center; z-index: 10; animation: fade .25s var(--ease); }
