@@ -10,13 +10,13 @@ const ansi = (s) => {
 export const THEMES = {
   termix: {
     label: "Termix", dark: true,
-    bg: "#252C3D", scene: "#2B3346", vide: "#1E2433", indigo: "#363F55", brume: "#48536C",
+    bg: "#1B2030", scene: "#212738", vide: "#151A26", indigo: "#2C3447", brume: "#3D475E",
     ink: "#EEEEEE", mute: "#CDD3DD", faint: "#B3BBC8",
     accent: "#5D866C", accent2: "#9CCBA9", success: "#9CCBA9", error: "#F0A0A0", warn: "#EBC48A", onAccent: "#FFFFFF",
     // The accent is too dark against the background for a focus ring (3:1): use its light tint.
     focus: "#9CCBA9",
-    cursor: "#9CCBA9", selection: "#48536C",
-    ...ansi("#1E2433 #F0A0A0 #9CCBA9 #EBC48A #9DC0EC #C9AEE6 #8FD0CF #CDD3DD #8693AA #F5B5B5 #B5DBC0 #F2D5A6 #B6D0F2 #D9C4EE #ACDEDD #F5F5F5"),
+    cursor: "#9CCBA9", selection: "#3D475E",
+    ...ansi("#151A26 #F0A0A0 #9CCBA9 #EBC48A #9DC0EC #C9AEE6 #8FD0CF #CDD3DD #8693AA #F5B5B5 #B5DBC0 #F2D5A6 #B6D0F2 #D9C4EE #ACDEDD #F5F5F5"),
   },
   midnights: {
     label: "Midnights (nuit)", dark: true,

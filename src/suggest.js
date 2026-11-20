@@ -40,6 +40,7 @@ export class Suggest {
     this.menu = document.createElement("ul");
     this.menu.className = "suggest-list";
     this.menu.setAttribute("role", "listbox");
+    this.ghost.hidden = this.menu.hidden = true; // shown on demand; an empty list showed as a bar under the prompt
     term.element.append(this.ghost, this.menu);
     let raf = 0;
     const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => this.update()); };

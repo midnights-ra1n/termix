@@ -2,7 +2,7 @@
 
 /* Tokens are set by themes.js; these are the Termix fallbacks. */
 :root {
-  --bg: #252C3D; --scene: #2B3346; --vide: #1E2433; --indigo: #363F55; --brume: #48536C;
+  --bg: #1B2030; --scene: #212738; --vide: #151A26; --indigo: #2C3447; --brume: #3D475E;
   --ink: #EEEEEE; --mute: #CDD3DD; --faint: #B3BBC8;
   --accent: #5D866C; --accent2: #9CCBA9; --success: #9CCBA9; --error: #F0A0A0; --warn: #EBC48A; --onAccent: #FFFFFF; --focus: #9CCBA9;
   --st-up: #4ADE80; --st-ping: #FACC15; --st-down: #F87171;

@@ -6005,7 +6005,7 @@ dependencies = [
 
 [[package]]
 name = "termix"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
