@@ -12,8 +12,9 @@ let cwd = "";
 
 export function initPanel() {
   const tabsEl = document.getElementById("panel-tabs");
-  tabsEl.replaceChildren(...[["stats", t("stats")], ["sftp", t("sftp")], ["docker", t("docker")], ["tmux", t("tmux")]].map(([k, l]) =>
-    h("button.seg" + (k === tab ? ".on" : ""), { role: "tab", "aria-selected": String(k === tab), onclick: () => { tab = k; initPanel(); refresh(); } }, l)));
+  // Icons, not words: four labels don't fit the panel header in every language.
+  tabsEl.replaceChildren(...[["stats", "stats"], ["sftp", "folderTree"], ["docker", "docker"], ["tmux", "terminal"]].map(([k, ic]) =>
+    h("button.seg" + (k === tab ? ".on" : ""), { role: "tab", "aria-selected": String(k === tab), "aria-label": t(k), title: t(k), onclick: () => { tab = k; initPanel(); refresh(); } }, icon(ic, 15))));
 }
 events.addEventListener("focus", () => refresh());
 

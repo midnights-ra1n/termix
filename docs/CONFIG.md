@@ -23,11 +23,14 @@ Les clés absentes du fichier gardent leur valeur par défaut ; un fichier inval
 ```toml
 [appearance]
 language = "auto"            # auto (langue du système), fr, en, es, de
-theme = "midnights"          # midnights, aube, nord, dracula, solarized, gruvbox, system, ou un thème perso
+theme = "midnights"          # midnights, aube, nord, dracula, solarized, gruvbox, catppuccin, latte, tokyonight,
+                             # onedark, rosepine, everforest, kanagawa, github, system, ou un thème perso
 ui_font = "Geist, system-ui, sans-serif"
 ui_font_size = 13
 sidebar = true               # barre latérale des hôtes
-right_panel = true           # panneau SFTP + stats
+right_panel = true           # panneau Stats, SFTP, Docker, tmux
+accent = ""                  # couleur d'accent "#RRGGBB" ; vide = celle du thème
+density = "comfortable"      # comfortable, compact
 
 [terminal]
 font_family = "\"Geist Mono\", \"JetBrains Mono\", Menlo, Consolas, monospace"
@@ -39,6 +42,10 @@ scrollback = 10000
 copy_on_select = false
 suggestions = true           # prédiction des commandes (texte grisé)
 tmux = true                  # shell dans tmux (si installé sur le serveur) : survit à la déconnexion
+font_weight = "normal"       # normal, 500, bold
+letter_spacing = 0           # en px, peut être négatif
+padding = 8                  # marge intérieure des terminaux, en px
+bold_is_bright = false       # texte gras dans les couleurs ANSI vives
 
 [behavior]
 tray_icon = true             # icône barre des menus (macOS) / zone de notification (GNOME, KDE, Windows)

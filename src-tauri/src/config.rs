@@ -32,6 +32,10 @@ pub struct Appearance {
     pub ui_font_size: u32,
     pub sidebar: bool,
     pub right_panel: bool,
+    /// Overrides the theme accent (#RRGGBB), empty = theme accent.
+    pub accent: String,
+    /// comfortable | compact
+    pub density: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -48,6 +52,13 @@ pub struct Terminal {
     pub suggestions: bool,
     /// Open shells inside tmux (when installed on the server) so jobs survive a disconnect.
     pub tmux: bool,
+    /// normal | 500 | bold
+    pub font_weight: String,
+    pub letter_spacing: f32,
+    /// Inner padding of terminals, in px.
+    pub padding: u32,
+    /// Bold text in the bright ANSI colours (classic xterm behaviour).
+    pub bold_is_bright: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -86,7 +97,7 @@ impl Default for Settings {
 }
 impl Default for Appearance {
     fn default() -> Self {
-        Self { language: "auto".into(), theme: "midnights".into(), ui_font: "Geist, system-ui, sans-serif".into(), ui_font_size: 13, sidebar: true, right_panel: true }
+        Self { language: "auto".into(), theme: "midnights".into(), ui_font: "Geist, system-ui, sans-serif".into(), ui_font_size: 13, sidebar: true, right_panel: true, accent: String::new(), density: "comfortable".into() }
     }
 }
 impl Default for Terminal {
@@ -101,6 +112,10 @@ impl Default for Terminal {
             copy_on_select: false,
             suggestions: true,
             tmux: true,
+            font_weight: "normal".into(),
+            letter_spacing: 0.0,
+            padding: 8,
+            bold_is_bright: false,
         }
     }
 }

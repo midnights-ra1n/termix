@@ -5,7 +5,7 @@ import {
   createElement, Server, Cloud, Database, Monitor, Cpu, Container, Router, Shield, Globe, TerminalSquare,
   House, Box, HardDrive, Flame, Rocket, Folder, FolderOpen, Star, Plus, FolderPlus, Search, Settings,
   X, Upload, Download, RefreshCw, ArrowUp, File, Trash2, PanelLeftInactive, PanelRight, Columns2, Rows2,
-  ChevronRight, GripVertical,
+  ChevronRight, GripVertical, Activity, FolderTree,
 } from "lucide";
 import {
   siDebian, siUbuntu, siAlmalinux, siRockylinux, siFedora, siArchlinux, siAlpinelinux, siCentos, siRedhat, siOpensuse,
@@ -34,7 +34,7 @@ const UI_ICONS = {
   folder: Folder, folderOpen: FolderOpen, star: Star, plus: Plus, folderPlus: FolderPlus, search: Search,
   settings: Settings, close: X, upload: Upload, download: Download, refresh: RefreshCw, up: ArrowUp,
   file: File, trash: Trash2, sidebar: PanelLeftInactive, panel: PanelRight, splitH: Columns2, splitV: Rows2,
-  chevron: ChevronRight, grip: GripVertical,
+  chevron: ChevronRight, grip: GripVertical, stats: Activity, folderTree: FolderTree,
 };
 
 const OS = {

@@ -449,13 +449,14 @@ pub fn valid_tmux_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// Attach the session, creating it if needed (mouse on so the wheel scrolls tmux history);
+/// Attach the session, creating it if needed (mouse on so the wheel scrolls tmux history, status bar off so it
+/// looks like a plain shell);
 /// without tmux on the server, a plain login shell.
 pub fn tmux_cmd(name: &str) -> Result<String> {
     if !valid_tmux_name(name) {
         bail!("nom de session tmux invalide : {name}");
     }
-    Ok(format!(r#"sh -c 'command -v tmux >/dev/null 2>&1 && exec tmux new-session -A -s {name} \; set-option mouse on; exec "${{SHELL:-sh}}" -l'"#))
+    Ok(format!(r#"sh -c 'command -v tmux >/dev/null 2>&1 && exec tmux new-session -A -s {name} \; set-option mouse on \; set-option status off; exec "${{SHELL:-sh}}" -l'"#))
 }
 
 pub const TMUX_LS_CMD: &str = r##"sh -c 'command -v tmux >/dev/null 2>&1 || { echo NOTMUX; exit 0; }; tmux ls -F "#{session_name}|#{session_windows}|#{session_attached}|#{session_activity}|#{pane_current_command}" 2>/dev/null; true'"##;

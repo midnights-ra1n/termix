@@ -122,6 +122,8 @@ function applyAppearance() {
   const th = resolveTheme(a.theme, S.settings.themes);
   applyTheme(th);
   const r = document.documentElement.style;
+  if (/^#[0-9a-f]{6}$/i.test(a.accent)) r.setProperty("--accent", a.accent);
+  document.body.dataset.density = a.density;
   r.setProperty("--ui-font", a.ui_font);
   r.setProperty("--ui-size", a.ui_font_size + "px");
   applyTerminalSettings(xtermTheme(th));
@@ -158,6 +160,13 @@ async function openSettings(section = "general") {
     theme: sel(s.appearance.theme, Object.entries(allThemes).map(([k, th]) => [k, th.label || k])),
     ui_font: h("input", { value: s.appearance.ui_font }),
     ui_font_size: num(s.appearance.ui_font_size, 10, 24),
+    accent_on: h("input.switch", { type: "checkbox", checked: !!s.appearance.accent, role: "switch", "aria-label": t("accent_custom") }),
+    accent: h("input.color", { type: "color", "aria-label": t("accent_custom"), value: s.appearance.accent || resolveTheme(s.appearance.theme, s.themes).accent || "#C3BAFE" }),
+    density: sel(s.appearance.density, [["comfortable", t("density_comfortable")], ["compact", t("density_compact")]]),
+    font_weight: sel(s.terminal.font_weight, [["normal", t("fw_normal")], ["500", t("fw_medium")], ["bold", t("fw_bold")]]),
+    letter_spacing: num(s.terminal.letter_spacing, -2, 4, 0.5),
+    padding: num(s.terminal.padding, 0, 40, 2),
+    bold_is_bright: sw(s.terminal.bold_is_bright),
     font_family: h("input", { value: s.terminal.font_family }),
     font_size: num(s.terminal.font_size, 8, 40),
     line_height: num(s.terminal.line_height, 1, 2, 0.05),
@@ -215,18 +224,21 @@ async function openSettings(section = "general") {
         row(t("background"), f.run_in_background),
         row(t("auto_updates"), f.check_updates)),
       h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => checkUpdate(true, f.update_channel.value) }, t("check_now")))],
-    appearance: [t("set_appearance"), h("div.form-grid", {}, field(t("theme"), f.theme), field(t("size"), f.ui_font_size),
-      h("div.span2", {}, field(t("ui_font"), f.ui_font)))],
+    appearance: [t("set_appearance"), h("div.form-grid", {}, field(t("theme"), f.theme), field(t("density"), f.density),
+      h("div.span2", {}, field(t("ui_font"), f.ui_font)), field(t("size"), f.ui_font_size)),
+      h("div.toggles", {}, h("div.toggle", {}, h("span", {}, t("accent_custom"), h("small", {}, t("accent_hint"))), h("div.inline", {}, f.accent, f.accent_on)))],
     terminal: [t("set_terminal"), h("div.form-grid", {},
       h("div.span2", {}, field(t("term_font"), f.font_family)),
       field(t("size"), f.font_size), field(t("line_height"), f.line_height),
-      field(t("cursor"), f.cursor_style), field(t("scrollback"), f.scrollback)),
-      h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint")), row(t("tmux_setting"), f.tmux, t("tmux_setting_hint"))),
+      field(t("cursor"), f.cursor_style), field(t("scrollback"), f.scrollback),
+      field(t("font_weight"), f.font_weight), field(t("letter_spacing"), f.letter_spacing), field(t("term_padding"), f.padding)),
+      h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("bold_bright"), f.bold_is_bright), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint")), row(t("tmux_setting"), f.tmux, t("tmux_setting_hint"))),
       h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => { clearLocalHistory(); toast(t("history_cleared"), "success"); } }, t("clear_history")))],
     ssh: [t("set_ssh"), h("div.form-grid", {}, h("div.span2", {}, field(t("agent_socket"), f.agent_socket, t("agent_hint"))), agents,
       field(t("keepalive"), f.keepalive)),
       h("h4", {}, t("agents_found")), found],
     keys: [t("set_keys"), h("p.mute.small", {}, t("keys_hint")), h("div.kb-list", {}, ...kbRows)],
+    about: [t("set_about"), aboutView()],
   };
 
   const content = h("div.settings-content");
@@ -237,8 +249,7 @@ async function openSettings(section = "general") {
     content.replaceChildren(h("h3", {}, title), ...kids);
     nav.querySelectorAll("button").forEach((b) => { b.classList.toggle("on", b.dataset.k === key); b.setAttribute("aria-selected", String(b.dataset.k === key)); });
   };
-  nav.append(...Object.entries(pages).map(([k, [title]]) => h("button", { type: "button", role: "tab", dataset: { k }, onclick: () => show(k) }, title)),
-    h("button", { type: "button", onclick: () => openAbout() }, t("set_about")));
+  nav.append(...Object.entries(pages).map(([k, [title]]) => h("button", { type: "button", role: "tab", dataset: { k }, onclick: () => show(k) }, title)));
   show(section);
 
   const ok = await modal(t("settings_title"), (close) => h("form.settings", { onsubmit: (e) => { e.preventDefault(); close(true); } },
@@ -249,8 +260,8 @@ async function openSettings(section = "general") {
   if (!ok) return;
 
   const n = (el, d) => (el.value !== "" && Number.isFinite(+el.value) ? +el.value : d);
-  Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.value, ui_font_size: n(f.ui_font_size, 13) });
-  Object.assign(s.terminal, { font_family: f.font_family.value, font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked });
+  Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.value, ui_font_size: n(f.ui_font_size, 13), accent: f.accent_on.checked ? f.accent.value : "", density: f.density.value });
+  Object.assign(s.terminal, { font_family: f.font_family.value, font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked });
   Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
   Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30) });
   s.keybindings = kb;
@@ -267,9 +278,14 @@ async function openSettings(section = "general") {
 // ---------- about ----------
 
 function openAbout() {
+  return modal(t("about"), () => aboutView(), { cls: "about-modal" });
+}
+
+/** Shared by the About window (menu) and the About page of the settings. */
+function aboutView() {
   const plat = { macos: "macOS", windows: "Windows", linux: "Linux" }[S.platform] || S.platform;
   const ch = S.settings.behavior.update_channel;
-  return modal(t("about"), (close) => h("div.about", {},
+  return h("div.about", {},
     h("img.about-icon", { src: appIcon, alt: "", width: 112, height: 112 }),
     h("h1.about-name", {}, "RUSTTERM", h("span.dot-end", {}, ".")),
     h("p.about-tag", {}, t("about_tag")),
@@ -278,11 +294,10 @@ function openAbout() {
       h("dt", {}, t("platform")), h("dd.mono", {}, `${plat} · ${S.arch}`),
       h("dt", {}, t("config_dir")), h("dd.mono.wrap", {}, S.configDir)),
     h("div.about-actions", {},
-      h("button.btn.primary", { onclick: () => checkUpdate(true) }, t("check_update").replace(/…$/, "")),
-      h("button.btn", { onclick: () => openUrl(REPO) }, t("github")),
-      h("button.btn", { onclick: () => openUrl(`${REPO}/releases`) }, t("release_notes"))),
-    h("p.about-foot.mute.small", {}, t("built_with")),
-  ), { cls: "about-modal" });
+      h("button.btn.primary", { type: "button", onclick: () => checkUpdate(true) }, t("check_update").replace(/…$/, "")),
+      h("button.btn", { type: "button", onclick: () => openUrl(REPO) }, t("github")),
+      h("button.btn", { type: "button", onclick: () => openUrl(`${REPO}/releases`) }, t("release_notes"))),
+    h("p.about-foot.mute.small", {}, t("built_with")));
 }
 
 // ---------- updates ----------

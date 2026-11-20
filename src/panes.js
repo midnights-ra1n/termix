@@ -57,11 +57,10 @@ class Pane {
     // Kept across reconnects (Enter after a drop) so the same tmux session is reattached.
     if (this.tmux === undefined) this.tmux = S.settings.terminal.tmux ? "rt-" + crypto.randomUUID().slice(0, 8) : null;
     this.el.replaceChildren(h("div.connecting", { role: "status" }, h("span.dot"), tr("connecting", host.name)));
-    const t = S.settings.terminal;
     const term = new Terminal({
-      fontFamily: t.font_family, fontSize: t.font_size + zoom, lineHeight: t.line_height, cursorStyle: t.cursor_style,
-      cursorBlink: t.cursor_blink, scrollback: t.scrollback, theme: xtheme, allowProposedApi: true,
-      macOptionIsMeta: true, rightClickSelectsWord: true,
+      ...termOptions(), allowProposedApi: true, macOptionIsMeta: true, rightClickSelectsWord: true,
+      // ⌥-drag (Shift-drag elsewhere) selects text even when tmux has the mouse.
+      macOptionClickForcesSelection: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -307,13 +306,22 @@ export function setZoom(delta) {
   applyTerminalSettings();
 }
 
+function termOptions() {
+  const t = S.settings.terminal;
+  return {
+    fontFamily: t.font_family, fontSize: t.font_size + zoom, lineHeight: t.line_height, cursorStyle: t.cursor_style,
+    cursorBlink: t.cursor_blink, scrollback: t.scrollback, theme: xtheme, fontWeight: t.font_weight,
+    letterSpacing: t.letter_spacing, drawBoldTextInBrightColors: t.bold_is_bright,
+  };
+}
+
 /** Re-applies settings/theme to every live terminal. */
 export function applyTerminalSettings(theme) {
   if (theme) xtheme = theme;
-  const t = S.settings.terminal;
+  document.documentElement.style.setProperty("--term-pad", S.settings.terminal.padding + "px");
   for (const tab of tabs) for (const p of leaves(tab.root)) {
     if (!p.term) continue;
-    Object.assign(p.term.options, { fontFamily: t.font_family, fontSize: t.font_size + zoom, lineHeight: t.line_height, cursorStyle: t.cursor_style, cursorBlink: t.cursor_blink, scrollback: t.scrollback, theme: xtheme });
+    Object.assign(p.term.options, termOptions());
     p.refit();
   }
 }
