@@ -1,0 +1,70 @@
+:root {
+  --bg: #36415A; --scene: #3E4A64; --vide: #2B3448; --line: rgba(238, 238, 238, .09);
+  --ink: #EEEEEE; --mute: #CDD3DD; --faint: #B3BBC8;
+  --accent: #5D866C; --focus: #9CCBA9; --error: #F0A0A0;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.login form { width: min(360px, 100%); display: grid; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 22px; font-weight: 600; }
+.brand img { width: 40px; height: 40px; }
+
+.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+nav { background: var(--vide); padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; }
+nav .brand { font-size: 16px; padding: 0 8px; margin-bottom: 16px; }
+nav .brand img { width: 28px; height: 28px; }
+nav button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 8px; color: var(--mute); }
+nav button:hover { background: var(--scene); }
+nav button[aria-current="page"] { background: var(--scene); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+nav button:focus-visible { outline: 2px solid var(--focus); }
+nav .who { margin-top: auto; padding: 8px 12px; color: var(--faint); font-size: 12px; }
+section { padding: 24px 32px; max-width: 1100px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+.lead { color: var(--mute); margin: 0 0 20px; }
+
+label { display: grid; gap: 4px; color: var(--mute); font-size: 13px; }
+input, select { background: var(--vide); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-height: 36px; }
+input[type=checkbox] { min-height: auto; width: 16px; height: 16px; accent-color: var(--accent); }
+label.check { display: flex; align-items: center; gap: 8px; }
+.btn { border: 1px solid var(--line); background: var(--scene); border-radius: 10px; padding: 0 16px; min-height: 36px; cursor: pointer; }
+.btn:hover { background: #46546F; }
+.btn.primary { background: var(--ink); color: var(--vide); border-color: transparent; font-weight: 500; }
+.btn.danger { color: var(--error); }
+.btn.small { min-height: 28px; padding: 0 10px; font-size: 13px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.error { color: var(--error); min-height: 20px; margin: 0; }
+.muted { color: var(--faint); }
+.mono { font-family: var(--mono); font-size: 12px; }
+
+table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+th { text-align: left; font-weight: 500; color: var(--faint); font-size: 12px; padding: 8px; border-bottom: 1px solid var(--line); }
+td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td.actions { text-align: right; white-space: nowrap; }
+.tag { display: inline-block; font-size: 12px; color: var(--mute); background: var(--vide); border-radius: 6px; padding: 0 6px; margin-right: 4px; }
+
+.card { background: var(--scene); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-top: 16px; display: grid; gap: 12px; }
+.card h2 { font-size: 15px; font-weight: 600; margin: 0; }
+dialog { background: var(--scene); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 24px; width: min(560px, calc(100% - 32px)); }
+dialog::backdrop { background: rgba(20, 24, 34, .6); }
+dialog form { display: grid; gap: 12px; }
+textarea { background: var(--vide); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; color: var(--ink); font: 12px/1.5 var(--mono); min-height: 160px; resize: vertical; }
+.empty { color: var(--faint); padding: 24px 0; }
+
+@media (max-width: 720px) {
+  .shell { grid-template-columns: 1fr; }
+  nav { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  nav .brand { margin: 0 8px 0 0; }
+  nav .who { margin: 0 0 0 auto; }
+  section { padding: 16px; }
+  .grid2 { grid-template-columns: 1fr; }
+  table { font-size: 13px; }
+  .hide-sm { display: none; }
+}

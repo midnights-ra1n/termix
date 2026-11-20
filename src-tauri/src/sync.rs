@@ -410,6 +410,32 @@ mod tests {
     }
 
     #[test]
+    fn opens_what_the_web_ui_sealed_with_webcrypto() {
+        // Produced by the sync server's web UI code path (WebCrypto PBKDF2 + AES-GCM).
+        let key = Vault::derive("correct horse battery", "AwMDAwMDAwMDAwMDAwMDAw==").unwrap();
+        let plain = Vault::new(&key).open("CQkJCQkJCQkJCQkJkEqJyPNoTC8tU3j/aryuiCuij6p1537WW1IwvzFugnntV+p2").unwrap();
+        assert_eq!(plain, b"hello from webcrypto");
+    }
+
+    /// Against a running termix-sync: TERMIX_TEST_SERVER=http://127.0.0.1:18080 cargo test -- --ignored live_server
+    #[tokio::test]
+    #[ignore]
+    async fn live_server_roundtrip() {
+        let url = std::env::var("TERMIX_TEST_SERVER").unwrap();
+        let (tok, salt) = server_login(&url, "admin", "adminpass1", "test").await.unwrap();
+        assert!(!salt.is_empty());
+        let mut a = Store::default();
+        a.put("host:live", Some(json!({ "id": "live", "name": "from a" })), "a");
+        server_sync(&url, &tok, &mut a).await.unwrap();
+        assert!(a.dirty.is_empty());
+        let mut b = Store::default();
+        let changed = server_sync(&url, &tok, &mut b).await.unwrap();
+        assert!(changed.contains("host:live"));
+        assert_eq!(b.records["host:live"].v, a.records["host:live"].v);
+        assert!(server_login(&url, "admin", "nope", "test").await.is_err());
+    }
+
+    #[test]
     fn local_changes_become_records_and_deletions_tombstones() {
         let mut store = Store::default();
         let mut doc = HostsDoc::default();

@@ -1,0 +1,61 @@
+# termix-sync server image: tested, built per arch on native runners, pushed to GHCR for release channels.
+name: Sync server
+on:
+  push:
+    branches: [dev, nightly, beta, stable]
+    paths: [sync-server/**, assets/icon-rounded.svg, .github/workflows/sync-server.yml]
+  pull_request:
+    paths: [sync-server/**]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/termix-sync
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: sync-server }
+      - run: cd sync-server && cargo test --locked
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f sync-server/Dockerfile -t termix-sync:test .
+      - name: Smoke test (health, admin bootstrap, login)
+        run: |
+          docker run -d --name ts -p 8080:8080 -e TERMIX_ADMIN_PASSWORD=smoketest1 termix-sync:test
+          for i in $(seq 20); do curl -fs http://localhost:8080/healthz && break; sleep 1; done
+          curl -fs -XPOST http://localhost:8080/api/login -H 'content-type: application/json' \
+            -d '{"user":"admin","password":"smoketest1","device":"ci"}' | grep -q token || { docker logs ts; exit 1; }
+      - if: github.event_name == 'push' && github.ref_name != 'dev'
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag termix-sync:test "$IMAGE:${{ github.ref_name }}-${{ matrix.arch }}"
+          docker push "$IMAGE:${{ github.ref_name }}-${{ matrix.arch }}"
+
+  manifest:
+    needs: build
+    if: github.event_name == 'push' && github.ref_name != 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          tags=(-t "$IMAGE:${{ github.ref_name }}")
+          [ "${{ github.ref_name }}" = stable ] && tags+=(-t "$IMAGE:latest")
+          docker buildx imagetools create "${tags[@]}" "$IMAGE:${{ github.ref_name }}-amd64" "$IMAGE:${{ github.ref_name }}-arm64"
