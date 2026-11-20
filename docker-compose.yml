@@ -1,11 +1,11 @@
 services:
-  rustterm:
-    image: ghcr.io/midnights-ra1n/rustterm:stable
+  termix:
+    image: ghcr.io/midnights-ra1n/termix:stable
     build: .
     ports:
       - "5800:5800" # web UI (noVNC)
     volumes:
-      - ./rustterm-config:/config
+      - ./termix-config:/config
       # Optional SSH agent of the Docker host:
       # - ${SSH_AUTH_SOCK}:/ssh-agent
     environment:

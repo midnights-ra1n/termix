@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RustTerm",
+  "productName": "Termix",
   "version": "0.1.1",
-  "identifier": "com.midnights.rustterm",
+  "identifier": "com.midnights.termix",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "RustTerm",
+        "title": "Termix",
         "width": 1280,
         "height": 800,
         "minWidth": 720,
@@ -21,7 +21,7 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "visible": false,
-        "backgroundColor": "#0B1130",
+        "backgroundColor": "#36415A",
         "dragDropEnabled": false,
         "trafficLightPosition": {
           "x": 18,

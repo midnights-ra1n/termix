@@ -11,6 +11,12 @@ import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, a
 import { initPanel, refreshPanel } from "./panel.js";
 import { clearLocalHistory } from "./suggest.js";
 import appIcon from "../src-tauri/icons/128x128@2x.png";
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 
 const REPO = "https://github.com/midnights-ra1n/RustTerm";
 
@@ -287,7 +293,7 @@ function aboutView() {
   const ch = S.settings.behavior.update_channel;
   return h("div.about", {},
     h("img.about-icon", { src: appIcon, alt: "", width: 112, height: 112 }),
-    h("h1.about-name", {}, "RUSTTERM", h("span.dot-end", {}, ".")),
+    h("h1.about-name", {}, "Termix"),
     h("p.about-tag", {}, t("about_tag")),
     h("dl.about-meta", {},
       h("dt", {}, t("version")), h("dd.mono", {}, `${S.version} · ${t("ch_" + ch)}`),

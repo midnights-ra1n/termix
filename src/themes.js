@@ -8,6 +8,16 @@ const ansi = (s) => {
 };
 
 export const THEMES = {
+  termix: {
+    label: "Termix", dark: true,
+    bg: "#36415A", scene: "#3E4A64", vide: "#2B3448", indigo: "#46546F", brume: "#55647F",
+    ink: "#EEEEEE", mute: "#CDD3DD", faint: "#B3BBC8",
+    accent: "#5D866C", accent2: "#9CCBA9", success: "#9CCBA9", error: "#F0A0A0", warn: "#EBC48A", onAccent: "#FFFFFF",
+    // The accent is too dark against the background for a focus ring (3:1): use its light tint.
+    focus: "#9CCBA9",
+    cursor: "#9CCBA9", selection: "#55647F",
+    ...ansi("#2B3448 #F0A0A0 #9CCBA9 #EBC48A #9DC0EC #C9AEE6 #8FD0CF #CDD3DD #8693AA #F5B5B5 #B5DBC0 #F2D5A6 #B6D0F2 #D9C4EE #ACDEDD #F5F5F5"),
+  },
   midnights: {
     label: "Midnights (nuit)", dark: true,
     bg: "#0B1130", scene: "#121A42", vide: "#060B1F", indigo: "#1A2558", brume: "#263478",
@@ -139,9 +149,9 @@ function systemTheme() {
 
 export function resolveTheme(name, userThemes = {}) {
   const all = { ...THEMES, ...userThemes };
-  let t = all[name] || THEMES.midnights;
+  let t = all[name] || THEMES.termix;
   if (t.system) t = systemTheme();
-  else if (userThemes[name]) t = { ...(THEMES[t.base] || THEMES.midnights), ...t };
+  else if (userThemes[name]) t = { ...(THEMES[t.base] || THEMES.termix), ...t };
   return t;
 }
 
@@ -150,6 +160,7 @@ export function applyTheme(t) {
   for (const k of ["bg", "scene", "vide", "indigo", "brume", "ink", "mute", "faint", "accent", "accent2", "success", "error", "warn", "onAccent"]) {
     if (t[k]) r.setProperty(`--${k}`, t[k]);
   }
+  r.setProperty("--focus", t.focus || t.accent);
   document.documentElement.dataset.dark = t.dark === false ? "0" : "1";
 }
 

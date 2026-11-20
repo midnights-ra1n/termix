@@ -55,7 +55,7 @@ class Pane {
   async connect(host, password = null) {
     this.host = host;
     // Kept across reconnects (Enter after a drop) so the same tmux session is reattached.
-    if (this.tmux === undefined) this.tmux = S.settings.terminal.tmux ? "rt-" + crypto.randomUUID().slice(0, 8) : null;
+    if (this.tmux === undefined) this.tmux = S.settings.terminal.tmux ? "tx-" + crypto.randomUUID().slice(0, 8) : null;
     this.el.replaceChildren(h("div.connecting", { role: "status" }, h("span.dot"), tr("connecting", host.name)));
     const term = new Terminal({
       ...termOptions(), allowProposedApi: true, macOptionIsMeta: true, rightClickSelectsWord: true,
@@ -195,7 +195,7 @@ function render() {
 function updateTabTitles() { render(); }
 
 function welcome() {
-  const el = h("div.welcome", {}, h("h1", {}, h("img", { src: logo, alt: "" }), "RustTerm"), h("p", {}, tr("welcome")));
+  const el = h("div.welcome", {}, h("h1", {}, h("img", { src: logo, alt: "" }), "Termix"), h("p", {}, tr("welcome")));
   el.addEventListener("dragover", (e) => e.dataTransfer.types.includes("text/plain") && e.preventDefault());
   el.addEventListener("drop", (e) => {
     const [kind, id] = e.dataTransfer.getData("text/plain").split(":");

@@ -444,7 +444,7 @@ mod tests {
 
 // ---------- tmux: shells that survive the SSH connection ----------
 
-/// tmux session names RustTerm can pass to a remote shell without quoting.
+/// tmux session names Termix can pass to a remote shell without quoting.
 pub fn valid_tmux_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }

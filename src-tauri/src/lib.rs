@@ -344,8 +344,8 @@ fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> 
         MenuItem::with_id(app, id, l(id, label), true, s.keybindings.get(id).map(|k| k.as_str()).filter(|k| !k.is_empty()))
     };
     let plain = |id: &str, label: &str| MenuItem::with_id(app, id, l(id, label), true, None::<&str>);
-    let app_menu = SubmenuBuilder::new(app, "RustTerm")
-        .item(&plain("about", "À propos de RustTerm")?)
+    let app_menu = SubmenuBuilder::new(app, "Termix")
+        .item(&plain("about", "À propos de Termix")?)
         .item(&plain("check_update", "Rechercher des mises à jour…")?)
         .separator()
         .item(&item("settings", "Réglages…")?)
@@ -356,7 +356,7 @@ fn build_menu(app: &AppHandle, s: &Settings) -> tauri::Result<Menu<tauri::Wry>> 
         .item(&PredefinedMenuItem::hide_others(app, None)?)
         .item(&PredefinedMenuItem::show_all(app, None)?)
         .separator()
-        .item(&PredefinedMenuItem::quit(app, Some(&l("quit_app", "Quitter RustTerm")))?)
+        .item(&PredefinedMenuItem::quit(app, Some(&l("quit_app", "Quitter Termix")))?)
         .build()?;
     let file = SubmenuBuilder::new(app, l("menu_file", "Fichier"))
         .item(&item("new_host", "Nouvel hôte…")?)
@@ -434,8 +434,8 @@ fn tray_menu(app: &AppHandle, doc: &HostsDoc) -> tauri::Result<Menu<tauri::Wry>>
         b = b.item(&MenuItem::with_id(app, "noop", lbl(app, "no_hosts", "Aucun hôte"), false, None::<&str>)?);
     }
     b.separator()
-        .item(&MenuItem::with_id(app, "show", lbl(app, "open_app", "Ouvrir RustTerm"), true, None::<&str>)?)
-        .item(&MenuItem::with_id(app, "about", lbl(app, "about", "À propos de RustTerm"), true, None::<&str>)?)
+        .item(&MenuItem::with_id(app, "show", lbl(app, "open_app", "Ouvrir Termix"), true, None::<&str>)?)
+        .item(&MenuItem::with_id(app, "about", lbl(app, "about", "À propos de Termix"), true, None::<&str>)?)
         .item(&MenuItem::with_id(app, "quit", lbl(app, "quit", "Quitter"), true, None::<&str>)?)
         .build()
 }
@@ -489,7 +489,7 @@ pub fn run() {
             let tray = TrayIconBuilder::with_id("main")
                 .icon(icon)
                 .icon_as_template(true)
-                .tooltip("RustTerm")
+                .tooltip("Termix")
                 .menu(&tray_menu(&handle, &HostsDoc::load())?)
                 .show_menu_on_left_click(true)
                 .on_tray_icon_event(|t, ev| {
@@ -531,7 +531,7 @@ pub fn run() {
             check_update, install_update
         ])
         .build(tauri::generate_context!())
-        .expect("échec du démarrage de RustTerm")
+        .expect("échec du démarrage de Termix")
         .run(|app, ev| {
             #[cfg(target_os = "macos")]
             if let RunEvent::Reopen { .. } = ev {

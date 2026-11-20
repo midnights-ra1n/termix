@@ -1,4 +1,4 @@
-# Configuration de RustTerm
+# Configuration de Termix
 
 Tout ce qui est réglable dans **Réglages** (⌘, sur macOS, Ctrl+Shift+, ailleurs) l'est aussi à la main.
 
@@ -10,11 +10,11 @@ Tout ce qui est réglable dans **Réglages** (⌘, sur macOS, Ctrl+Shift+, aille
 
 Emplacement du dossier :
 
-- macOS : `~/Library/Application Support/rustterm/`
-- Linux : `~/.config/rustterm/`
-- Windows : `%APPDATA%\rustterm\`
+- macOS : `~/Library/Application Support/termix/`
+- Linux : `~/.config/termix/`
+- Windows : `%APPDATA%\termix\`
 
-Les **mots de passe** et **phrases de passe** des clés ne sont jamais écrits sur disque par RustTerm : ils vont dans le trousseau du système (Trousseau macOS, Secret Service/GNOME Keyring/KWallet, Gestionnaire d'identifiants Windows).
+Les **mots de passe** et **phrases de passe** des clés ne sont jamais écrits sur disque par Termix : ils vont dans le trousseau du système (Trousseau macOS, Secret Service/GNOME Keyring/KWallet, Gestionnaire d'identifiants Windows).
 
 Les clés absentes du fichier gardent leur valeur par défaut ; un fichier invalide est ignoré (message sur la sortie d'erreur) et les valeurs par défaut sont utilisées. Le fichier est réécrit quand on enregistre depuis les Réglages : les commentaires ne sont donc pas conservés. Relancez l'app après une modification manuelle.
 
@@ -72,7 +72,7 @@ cursor = "#87D7F7"
 
 ## Agent SSH et gestionnaires de mots de passe
 
-RustTerm essaie, dans l'ordre : **agent SSH → fichier de clé → mot de passe** (enregistré ou demandé).
+Termix essaie, dans l'ordre : **agent SSH → fichier de clé → mot de passe** (enregistré ou demandé).
 
 Avec `agent_socket` vide, l'agent est trouvé ainsi :
 
@@ -113,7 +113,7 @@ Le thème `system` suit le mode clair/sombre et la couleur d'accent du système.
 
 ## Statut des hôtes
 
-Toutes les 30 s (et à chaque modification des hôtes), RustTerm vérifie chaque hôte :
+Toutes les 30 s (et à chaque modification des hôtes), Termix vérifie chaque hôte :
 
 - **vert** : le port SSH répond avec une bannière `SSH-` ;
 - **jaune** : l'hôte répond au ping mais pas le SSH ;
@@ -123,7 +123,7 @@ Le statut s'affiche dans la liste des hôtes et dans le menu de la barre des men
 
 ## Suggestions de commandes
 
-Pendant la saisie, RustTerm affiche en grisé la suite la plus probable de la commande, tirée de l'historique du serveur (`~/.bash_history`, `~/.zsh_history`, historique fish, lus à la connexion) et de vos commandes passées sur cet hôte (stockées localement).
+Pendant la saisie, Termix affiche en grisé la suite la plus probable de la commande, tirée de l'historique du serveur (`~/.bash_history`, `~/.zsh_history`, historique fish, lus à la connexion) et de vos commandes passées sur cet hôte (stockées localement).
 
 - `→` ou `Fin` : accepter la suggestion
 - `⌥→` / `Alt+→` : accepter le mot suivant

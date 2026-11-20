@@ -3,10 +3,40 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+const UI_FONT: &str = "\"IBM Plex Sans\", system-ui, sans-serif";
+const TERM_FONT: &str = "\"IBM Plex Mono\", Menlo, Consolas, monospace";
+
+/// Geist is no longer bundled: settings still on its former defaults move to IBM Plex.
+pub fn migrate_fonts(s: &mut Settings) {
+    if s.appearance.ui_font.starts_with("Geist") {
+        s.appearance.ui_font = UI_FONT.into();
+    }
+    if s.terminal.font_family.starts_with("\"Geist Mono\"") {
+        s.terminal.font_family = TERM_FONT.into();
+    }
+}
+
 pub fn dir() -> PathBuf {
-    let d = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("rustterm");
+    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    let d = base.join("termix");
+    migrate_dir(&base.join("rustterm"), &d);
     let _ = std::fs::create_dir_all(&d);
     d
+}
+
+/// The app was called RustTerm: take its settings and hosts over once, the first time Termix starts.
+fn migrate_dir(old: &std::path::Path, new: &std::path::Path) {
+    if new.exists() || !old.is_dir() {
+        return;
+    }
+    if std::fs::rename(old, new).is_err() {
+        // Different volume: copy the (flat) directory instead.
+        if std::fs::create_dir_all(new).is_ok() {
+            for e in std::fs::read_dir(old).into_iter().flatten().flatten() {
+                let _ = std::fs::copy(e.path(), new.join(e.file_name()));
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -97,13 +127,13 @@ impl Default for Settings {
 }
 impl Default for Appearance {
     fn default() -> Self {
-        Self { language: "auto".into(), theme: "midnights".into(), ui_font: "Geist, system-ui, sans-serif".into(), ui_font_size: 13, sidebar: true, right_panel: true, accent: String::new(), density: "comfortable".into() }
+        Self { language: "auto".into(), theme: "termix".into(), ui_font: UI_FONT.into(), ui_font_size: 13, sidebar: true, right_panel: true, accent: String::new(), density: "comfortable".into() }
     }
 }
 impl Default for Terminal {
     fn default() -> Self {
         Self {
-            font_family: "\"Geist Mono\", \"JetBrains Mono\", Menlo, Consolas, monospace".into(),
+            font_family: TERM_FONT.into(),
             font_size: 13,
             line_height: 1.2,
             cursor_style: "block".into(),
@@ -167,6 +197,7 @@ impl Settings {
                 }
             })
             .unwrap_or_default();
+        migrate_fonts(&mut s);
         for (a, k) in default_keybindings() {
             s.keybindings.entry(a).or_insert(k);
         }
@@ -262,11 +293,17 @@ pub fn tray_hosts<'a>(doc: &'a HostsDoc, mode: &str, count: usize, recent: &[Str
 }
 
 fn entry(id: &str) -> keyring::Result<keyring::Entry> {
-    keyring::Entry::new("rustterm", id)
+    keyring::Entry::new("termix", id)
 }
 /// `id` is "<host_id>" for the password or "<host_id>:passphrase" for the key passphrase.
 pub fn secret_get(id: &str) -> Option<String> {
-    entry(id).ok()?.get_password().ok()
+    if let Some(v) = entry(id).ok()?.get_password().ok() {
+        return Some(v);
+    }
+    // Secrets saved under the former name (RustTerm) move to the new keychain service on first use.
+    let v = keyring::Entry::new("rustterm", id).ok()?.get_password().ok()?;
+    let _ = secret_set(id, &v);
+    Some(v)
 }
 pub fn secret_set(id: &str, value: &str) -> anyhow::Result<()> {
     if value.is_empty() {
@@ -283,11 +320,38 @@ pub fn secret_set(id: &str, value: &str) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn geist_defaults_move_to_plex() {
+        let mut s = Settings::default();
+        s.appearance.ui_font = "Geist, system-ui, sans-serif".into();
+        s.terminal.font_family = "\"Geist Mono\", \"JetBrains Mono\", Menlo, Consolas, monospace".into();
+        migrate_fonts(&mut s);
+        assert_eq!((s.appearance.ui_font.as_str(), s.terminal.font_family.as_str()), (UI_FONT, TERM_FONT));
+        s.terminal.font_family = "Iosevka".into();
+        migrate_fonts(&mut s);
+        assert_eq!(s.terminal.font_family, "Iosevka");
+    }
+
+    #[test]
+    fn rustterm_dir_is_taken_over_once() {
+        let base = std::env::temp_dir().join(format!("tx-migrate-{}", std::process::id()));
+        let (old, new) = (base.join("rustterm"), base.join("termix"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("hosts.json"), "{}").unwrap();
+        migrate_dir(&old, &new);
+        assert_eq!(std::fs::read_to_string(new.join("hosts.json")).unwrap(), "{}");
+        // Never overwrites an existing Termix directory.
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("hosts.json"), "old").unwrap();
+        migrate_dir(&old, &new);
+        assert_eq!(std::fs::read_to_string(new.join("hosts.json")).unwrap(), "{}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+    #[test]
     fn partial_config_keeps_defaults() {
         let s: Settings = toml::from_str("[terminal]\nfont_size = 16\n").unwrap();
         assert_eq!(s.terminal.font_size, 16);
         assert_eq!(s.terminal.scrollback, 10000);
-        assert_eq!(s.appearance.theme, "midnights");
+        assert_eq!(s.appearance.theme, "termix");
     }
 }
 

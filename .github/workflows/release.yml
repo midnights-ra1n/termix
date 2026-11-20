@@ -72,7 +72,7 @@ jobs:
             flags=(--latest)
           fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --target "$SHA" --title "RustTerm $VERSION" \
+            gh release create "$TAG" --target "$SHA" --title "Termix $VERSION" \
               --notes "Canal $CHANNEL — commit $SHA" "${flags[@]}"
           fi
           echo "id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .id)" >> "$GITHUB_OUTPUT"
@@ -139,5 +139,5 @@ jobs:
         run: |
           mkdir sigs
           gh release download "$TAG" -D sigs -p '*.sig'
-          node scripts/updater-json.mjs "$VERSION" "RustTerm $VERSION ($CHANNEL)" sigs "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          node scripts/updater-json.mjs "$VERSION" "Termix $VERSION ($CHANNEL)" sigs "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
           gh release upload "$TAG" sigs/latest.json --clobber

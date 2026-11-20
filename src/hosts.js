@@ -255,7 +255,7 @@ export async function editHost(x = null, folder = null) {
 
 /** Export/import as JSON. Secrets stay in the OS keychain and are not exported. */
 export async function exportHosts() {
-  const path = await saveDialog({ title: t("export_hosts"), defaultPath: "rustterm-hosts.json", filters: [{ name: "JSON", extensions: ["json"] }] });
+  const path = await saveDialog({ title: t("export_hosts"), defaultPath: "termix-hosts.json", filters: [{ name: "JSON", extensions: ["json"] }] });
   if (!path) return;
   try { await invoke("export_hosts", { path }); toast(t("exported"), "success"); } catch (e) { toast(String(e), "error"); }
 }

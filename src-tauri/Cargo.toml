@@ -1,11 +1,11 @@
 [package]
-name = "rustterm"
+name = "termix"
 version = "0.1.1"
 edition = "2021"
 description = "Terminal SSH léger et personnalisable"
 
 [lib]
-name = "rustterm_lib"
+name = "termix_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

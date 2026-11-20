@@ -1,4 +1,4 @@
-RustTerm sera un terminal SSH. Son but sera de pouvoir créer et gérer des connexions SSH dans une belle interface personnalisable, minimaliste.
+Termix sera un terminal SSH. Son but sera de pouvoir créer et gérer des connexions SSH dans une belle interface personnalisable, minimaliste.
 
 # Interface
 

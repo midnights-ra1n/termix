@@ -7,4 +7,4 @@ Name={{name}}
 Terminal=false
 Type=Application
 StartupNotify=true
-StartupWMClass=com.midnights.rustterm
+StartupWMClass=com.midnights.termix
