@@ -7,10 +7,10 @@ import { S, h, icon, invoke, modal, field, toast, isMac } from "./ui.js";
 import { THEMES, resolveTheme, applyTheme, xtermTheme } from "./themes.js";
 import { t, setLanguage, LANGS, menuLabels } from "./i18n.js";
 import { initHosts, render as renderHosts, renderStatus, editHost, editFolder, exportHosts, importHosts } from "./hosts.js";
-import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab } from "./panes.js";
+import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab, focusTerminal } from "./panes.js";
 import { initPanel, refreshPanel } from "./panel.js";
 import { clearLocalHistory } from "./suggest.js";
-import { syncView } from "./sync.js";
+import { syncView, initSyncStatus } from "./sync.js";
 import appIcon from "../src-tauri/icons/128x128@2x.png";
 import { UI_FONTS, TERM_FONTS } from "./fonts.js";
 
@@ -191,6 +191,7 @@ async function openSettings(section = "general") {
     copy_on_select: sw(s.terminal.copy_on_select),
     suggestions: sw(s.terminal.suggestions),
     tmux: sw(s.terminal.tmux),
+    keep_focus: sw(s.terminal.keep_focus),
     tray_icon: sw(s.behavior.tray_icon),
     run_in_background: sw(s.behavior.run_in_background),
     check_updates: sw(s.behavior.check_updates),
@@ -255,7 +256,7 @@ async function openSettings(section = "general") {
       field(t("size"), f.font_size), field(t("line_height"), f.line_height),
       field(t("cursor"), f.cursor_style), field(t("scrollback"), f.scrollback),
       field(t("font_weight"), f.font_weight), field(t("letter_spacing"), f.letter_spacing), field(t("term_padding"), f.padding)),
-      h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("bold_bright"), f.bold_is_bright), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint")), row(t("tmux_setting"), f.tmux, t("tmux_setting_hint"))),
+      h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("bold_bright"), f.bold_is_bright), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint")), row(t("tmux_setting"), f.tmux, t("tmux_setting_hint")), row(t("keep_focus"), f.keep_focus, t("keep_focus_hint"))),
       h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => { clearLocalHistory(); toast(t("history_cleared"), "success"); } }, t("clear_history")))],
     ssh: [t("set_ssh"), h("div.form-grid", {}, h("div.span2", {}, field(t("agent_socket"), f.agent_socket, t("agent_hint"))), agents,
       field(t("keepalive"), f.keepalive)),
@@ -285,7 +286,7 @@ async function openSettings(section = "general") {
 
   const n = (el, d) => (el.value !== "" && Number.isFinite(+el.value) ? +el.value : d);
   Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.read(), ui_font_size: n(f.ui_font_size, 13), accent: "", colors: Object.fromEntries(colors.filter((c) => c.on.checked).map((c) => [c.k, c.pick.value])), density: f.density.value });
-  Object.assign(s.terminal, { font_family: f.font_family.read(), font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked });
+  Object.assign(s.terminal, { font_family: f.font_family.read(), font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, keep_focus: f.keep_focus.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked });
   Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
   Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30) });
   s.keybindings = kb;
@@ -359,6 +360,15 @@ async function boot() {
   document.getElementById("split-h").onclick = () => split("right");
   document.getElementById("split-v").onclick = () => split("down");
   document.getElementById("open-settings").onclick = () => openSettings();
+  initSyncStatus(document.getElementById("sync-status"), () => openSettings("sync"));
+  // Clicking the host list or the side panel leaves the keyboard in the terminal (Settings → Terminal).
+  for (const id of ["sidebar", "panel"]) document.getElementById(id).addEventListener("click", (e) => {
+    if (!S.settings.terminal.keep_focus || e.detail === 0) return; // clicks made with the keyboard keep their focus
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (a === document.body || (a?.closest("#sidebar, #panel") && !a.matches("input, textarea, select, [contenteditable]"))) focusTerminal();
+    });
+  });
   applyLanguage();
   initHosts(openHost);
   initPanes();

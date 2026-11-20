@@ -16,6 +16,12 @@ pub struct SyncCtl {
     /// One sync at a time: store file, keychain and hosts.json are shared.
     lock: tokio::sync::Mutex<()>,
     pub p2p: Arc<P2p>,
+    syncing: std::sync::atomic::AtomicBool,
+}
+
+/// Tells the title bar where sync stands.
+fn emit_status(app: &AppHandle) {
+    let _ = app.emit("sync-status", sync_status(app.clone()));
 }
 
 pub fn kick(app: &AppHandle) {
@@ -29,12 +35,22 @@ fn sync_settings(app: &AppHandle) -> config::Settings {
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         ensure_p2p(&app).await;
+        let mut first = true;
         loop {
             let _ = run_once(&app).await;
             let ctl = app.state::<SyncCtl>();
+            let s = sync_settings(&app).sync;
+            // Right after launch, local-network peers take a few seconds to show up: try again soon.
+            let wait = match (first && s.mode == "p2p", s.interval_secs) {
+                (true, _) => Some(5),
+                (_, 0) => None,
+                (_, n) => Some(n.max(5) as u64),
+            };
+            first = false;
+            // shortcut: "live" polls every 5 s (the server's ?after= query is cheap); a push channel would cut the delay to zero.
             tokio::select! {
                 _ = ctl.kick.notified() => tokio::time::sleep(Duration::from_millis(1500)).await,
-                _ = tokio::time::sleep(Duration::from_secs(60)) => {}
+                _ = async { match wait { Some(n) => tokio::time::sleep(Duration::from_secs(n)).await, None => std::future::pending().await } } => {}
             }
         }
     });
@@ -60,8 +76,10 @@ async fn ensure_p2p(app: &AppHandle) {
                 return Store::load().records;
             };
             let mut store = Store::load();
-            sync::merge(&mut store.records, &theirs);
+            sync::merge_into(&mut store, &theirs, &sync_settings(&app).sync.device_id);
+            store.dirty.clear(); // the peer gets everything we have in the answer
             let _ = finish(&app, &mut store, Vault::load().as_ref());
+            emit_status(&app);
             store.records
         })
     });
@@ -99,28 +117,44 @@ pub async fn run_once(app: &AppHandle) -> R<()> {
     let ctl = app.state::<SyncCtl>();
     let _g = ctl.lock.lock().await;
     let settings = sync_settings(app);
-    let (mode, dev) = (settings.sync.mode.clone(), settings.sync.device_id.clone());
+    let mode = settings.sync.mode.as_str();
     if mode != "server" && mode != "p2p" {
+        emit_status(app);
         return Ok(());
     }
+    ctl.syncing.store(true, std::sync::atomic::Ordering::Relaxed);
+    emit_status(app);
+    let r = sync_round(app, &ctl, &settings).await;
+    ctl.syncing.store(false, std::sync::atomic::Ordering::Relaxed);
+    emit_status(app);
+    r
+}
+
+async fn sync_round(app: &AppHandle, ctl: &SyncCtl, settings: &config::Settings) -> R<()> {
+    let (mode, dev) = (settings.sync.mode.clone(), settings.sync.device_id.clone());
     let vault = Vault::load();
     let mut store = Store::load();
     sync::record_local(&mut store, &HostsDoc::load(), &settings, vault.as_ref(), &config::secret_get, &dev);
     let result: anyhow::Result<()> = if mode == "server" {
         match config::secret_get("sync:token") {
-            Some(tok) => sync::server_sync(&settings.sync.server_url, &tok, &mut store).await.map(|_| ()),
+            Some(tok) => sync::server_sync(&settings.sync.server_url, &tok, &mut store, &dev).await.map(|_| ()),
             None => Err(anyhow::anyhow!("non connecté au serveur de synchro")),
         }
     } else {
-        let mut errs = vec![];
+        let (mut errs, mut reached) = (vec![], false);
         for p in store.peers.clone() {
             let addrs = ctl.p2p.addrs(&p.id);
             if addrs.is_empty() {
                 continue; // not on this network right now
             }
-            if let Err(err) = p2p::sync_with(&addrs, &p.id, &dev, &mut store).await {
-                errs.push(format!("{} : {err}", p.name));
+            match p2p::sync_with(&addrs, &p.id, &dev, &mut store).await {
+                Ok(()) => reached = true,
+                Err(err) => errs.push(format!("{} : {err}", p.name)),
             }
+        }
+        // shortcut: delivered to one peer counts as delivered; a third device offline now won't flag a conflict later.
+        if reached {
+            store.dirty.clear();
         }
         if errs.is_empty() { Ok(()) } else { Err(anyhow::anyhow!(errs.join(" · "))) }
     };
@@ -149,7 +183,13 @@ pub fn sync_status(app: AppHandle) -> Value {
         "logged_in": config::secret_get("sync:token").is_some(),
         "unlocked": Vault::load().is_some(),
         "vault_exists": store.records.get("vault:check").is_some_and(|r| r.v.is_some()),
-        "last_ok": store.last_ok, "last_error": store.last_error,
+        "last_ok": store.last_ok, "last_error": store.last_error, "interval": s.interval_secs,
+        "syncing": ctl.syncing.load(std::sync::atomic::Ordering::Relaxed),
+        "conflicts": store.conflicts.iter().map(|(k, c)| json!({
+            "key": k,
+            "mine": { "v": c.mine.v, "ts": c.mine.ts },
+            "theirs": { "v": c.theirs.v, "ts": c.theirs.ts, "device": device_name(&store, &c.theirs.dev) },
+        })).collect::<Vec<_>>(),
         "peers": store.peers.iter().map(|p| json!({ "id": p.id, "name": p.name, "online": visible.contains(&p.id) })).collect::<Vec<_>>(),
         "discovered": ctl.p2p.discovered().into_iter().filter(|f| !paired.contains(f.id.as_str())).collect::<Vec<_>>(),
     })
@@ -231,7 +271,7 @@ pub async fn sync_unlock(app: AppHandle, passphrase: String) -> R<()> {
         // Fetch the account's vault check first, so a second device can't create a competing one.
         if settings.sync.mode == "server" {
             let tok = config::secret_get("sync:token").ok_or("non connecté au serveur de synchro")?;
-            sync::server_sync(&settings.sync.server_url, &tok, &mut store).await.map_err(e)?;
+            sync::server_sync(&settings.sync.server_url, &tok, &mut store, &settings.sync.device_id).await.map_err(e)?;
         }
         if store.salt.is_empty() {
             if settings.sync.mode == "server" {
@@ -253,6 +293,40 @@ pub async fn sync_unlock(app: AppHandle, passphrase: String) -> R<()> {
 #[tauri::command]
 pub fn sync_lock() -> R<()> {
     config::secret_set("sync:vault", "").map_err(e)
+}
+
+/// A device's name from its pairing or its synced workspace, else a short id.
+fn device_name(store: &Store, dev: &str) -> String {
+    store.peers.iter().find(|p| p.id == dev).map(|p| p.name.clone())
+        .or_else(|| store.records.get(&format!("workspace:{dev}"))?.v.as_ref()?["name"].as_str().map(String::from))
+        .unwrap_or_else(|| dev.chars().take(8).collect())
+}
+
+#[tauri::command]
+pub async fn sync_set_interval(app: AppHandle, secs: u32) -> R<()> {
+    save_sync(&app, |s| s.interval_secs = secs)?;
+    kick(&app);
+    Ok(())
+}
+
+/// Settles a conflict: `keep` = "mine" re-publishes this device's version (newest, so it wins everywhere),
+/// "theirs" accepts what last-writer-wins chose.
+#[tauri::command]
+pub async fn sync_resolve(app: AppHandle, key: String, keep: String) -> R<()> {
+    {
+        let ctl = app.state::<SyncCtl>();
+        let _g = ctl.lock.lock().await;
+        let mut store = Store::load();
+        let c = store.conflicts.remove(&key).ok_or("conflit déjà réglé")?;
+        let v = if keep == "mine" { c.mine.v } else { c.theirs.v };
+        if store.records.get(&key).map(|r| &r.v) != Some(&v) {
+            store.put(&key, v, &sync_settings(&app).sync.device_id);
+        }
+        finish(&app, &mut store, Vault::load().as_ref()).map_err(e)?;
+    }
+    emit_status(&app);
+    kick(&app);
+    Ok(())
 }
 
 #[tauri::command]

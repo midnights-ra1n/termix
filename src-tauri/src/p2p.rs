@@ -265,7 +265,7 @@ pub async fn sync_with(addrs: &[SocketAddr], peer_id: &str, my_id: &str, store: 
     write_frame(&mut s, session.seal(&serde_json::to_vec(&store.records)?).as_bytes()).await?;
     let sealed = read_frame(&mut s).await?;
     let theirs: Records = serde_json::from_slice(&session.open(std::str::from_utf8(&sealed)?).ok_or_else(|| anyhow!("réponse illisible"))?)?;
-    sync::merge(&mut store.records, &theirs);
+    sync::merge_into(store, &theirs, my_id);
     Ok(())
 }
 

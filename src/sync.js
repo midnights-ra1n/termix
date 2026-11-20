@@ -1,7 +1,8 @@
 // Settings → Sync: server or local-network sync, the end-to-end encrypted vault and synced SSH keys.
 // Every action goes straight to the backend; nothing here waits for the settings "Save" button.
 import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
-import { h, invoke, field, toast, modal } from "./ui.js";
+import { listen } from "@tauri-apps/api/event";
+import { h, icon, invoke, field, toast, modal } from "./ui.js";
 import { t } from "./i18n.js";
 
 const when = (ms) => (ms ? new Date(ms).toLocaleString() : t("sync_never"));
@@ -23,14 +24,18 @@ export function syncView() {
   let last = "";
   const draw = async () => {
     const st = await invoke("sync_status");
-    last = JSON.stringify([st.peers, st.discovered, st.last_ok, st.last_error, st.unlocked]);
+    last = snapshot(st);
     const mode = h("select", {}, ...[["off", t("sync_off")], ["server", t("sync_server")], ["p2p", t("sync_p2p")]]
       .map(([v, l]) => h("option", { value: v, selected: v === st.mode }, l)));
     const device = h("input", { value: st.device_name });
     const apply = () => invoke("sync_set_mode", { mode: mode.value, deviceName: device.value }).then(draw, (x) => toast(t("sync_error", x), "error"));
     mode.onchange = apply;
     device.onchange = apply;
-    const parts = [h("p.mute.small", {}, t("sync_intro")), h("div.form-grid", {}, field(t("sync_mode"), mode), field(t("sync_device"), device))];
+    const every = h("select", { onchange: () => invoke("sync_set_interval", { secs: +every.value }).then(draw, (x) => toast(t("sync_error", x), "error")) },
+      ...[...new Set([5, 15, 30, 60, 300, 900, 0, st.interval])].map((v) => h("option", { value: v, selected: v === st.interval }, every_label(v))));
+    const parts = [h("p.mute.small", {}, t("sync_intro")), h("div.form-grid", {}, field(t("sync_mode"), mode), field(t("sync_device"), device),
+      st.mode !== "off" ? h("div.span2", {}, field(t("sync_every"), every, t("sync_every_hint"))) : null)];
+    if (st.conflicts.length) parts.push(conflictsPart(st, draw));
     if (st.mode === "server") parts.push(serverPart(st, draw));
     if (st.mode === "p2p") parts.push(p2pPart(st, draw));
     if (st.mode === "p2p" || (st.mode === "server" && st.logged_in)) parts.push(vaultPart(st, draw), await keysPart(st, draw), statusLine(st, draw));
@@ -42,7 +47,7 @@ export function syncView() {
     if (!root.isConnected) { if (!document.querySelector(".settings-modal")) clearInterval(timer); return; }
     if (root.contains(document.activeElement) && document.activeElement.matches("input, select")) return;
     const st = await invoke("sync_status").catch(() => null);
-    if (st && JSON.stringify([st.peers, st.discovered, st.last_ok, st.last_error, st.unlocked]) !== last) draw();
+    if (st && snapshot(st) !== last) draw();
   }, 3000);
   return root;
 }
@@ -133,4 +138,57 @@ function statusLine(st, draw) {
   return h("div.sync-status", {},
     h("span.grow.small" + (st.last_error ? ".error" : ".mute"), {}, st.last_error ? t("sync_error", st.last_error) : t("sync_last", when(st.last_ok))),
     h("button.btn.small", { type: "button", onclick: act(() => invoke("sync_now").then(draw), t("sync_done")) }, t("sync_now")));
+}
+
+const snapshot = (st) => JSON.stringify([st.peers, st.discovered, st.last_ok, st.last_error, st.unlocked, st.conflicts, st.interval]);
+const every_label = (s) => (s === 0 ? t("sync_manual") : s <= 5 ? t("sync_live") : s < 60 ? t("sync_secs", s) : t("sync_mins", s / 60));
+
+/** Short, readable differences between two versions of a record (nested settings flattened two levels). */
+function diff(a, b) {
+  const flat = (v, p = "", d = 0, out = {}) => {
+    if (v && typeof v === "object" && !Array.isArray(v) && d < 2) for (const [k, x] of Object.entries(v)) flat(x, p ? `${p}.${k}` : k, d + 1, out);
+    else out[p] = v;
+    return out;
+  };
+  if (a == null || b == null) return [];
+  const fa = flat(a), fb = flat(b), show = (v) => (typeof v === "string" ? v : JSON.stringify(v)) ?? "—";
+  return [...new Set([...Object.keys(fa), ...Object.keys(fb)])].filter((k) => JSON.stringify(fa[k]) !== JSON.stringify(fb[k]))
+    .slice(0, 6).map((k) => `${k} : ${show(fa[k])} → ${show(fb[k])}`);
+}
+
+function conflictsPart(st, draw) {
+  const label = (c) => {
+    const v = c.mine.v || c.theirs.v || {};
+    return c.key === "settings" ? t("settings_title") : `${c.key.startsWith("folder:") ? t("f_folder") : t("sync_item_host")} « ${v.name || v.host || c.key} »`;
+  };
+  const side = (r) => (r.v == null ? t("sync_deleted") : when(r.ts));
+  return h("div.sync-box", {}, h("h4", {}, t("sync_conflicts")), h("p.mute.small", {}, t("sync_conflicts_hint")),
+    h("ul.items", {}, ...st.conflicts.map((c) => h("li.item", {},
+      h("div.item-text", {}, h("strong", {}, label(c)),
+        h("small.item-meta", {}, `${t("sync_this_device")} : ${side(c.mine)} · ${c.theirs.device} : ${side(c.theirs)}`),
+        h("ul.conflict-diff", {}, ...diff(c.mine.v, c.theirs.v).map((d) => h("li", { title: d }, d)))),
+      h("div.inline", {},
+        h("button.btn.small", { type: "button", onclick: act(() => invoke("sync_resolve", { key: c.key, keep: "mine" }).then(draw)) }, t("sync_keep_mine")),
+        h("button.btn.small", { type: "button", onclick: act(() => invoke("sync_resolve", { key: c.key, keep: "theirs" }).then(draw)) }, t("sync_keep_theirs", c.theirs.device)))))));
+}
+
+/** Title bar indicator: hidden when sync is off; click syncs now, or opens Settings → Sync on a problem. */
+export function initSyncStatus(btn, openSync) {
+  let st = null;
+  const render = (s) => {
+    st = s;
+    btn.hidden = s.mode === "off" || !s.mode;
+    if (btn.hidden) return;
+    const [name, cls, text] = s.conflicts.length ? ["syncConflict", "warn", t("sync_n_conflicts", s.conflicts.length)]
+      : s.syncing ? ["syncing", "", t("sync_running")]
+      : s.last_error ? ["syncOff", "error", t("sync_error", s.last_error)]
+      : ["syncOk", "", t("sync_last", when(s.last_ok))];
+    btn.className = "icon-btn " + cls;
+    btn.replaceChildren(icon(name, 16));
+    btn.title = text;
+    btn.setAttribute("aria-label", text);
+  };
+  btn.onclick = () => (st && (st.conflicts.length || st.last_error) ? openSync() : invoke("sync_now").catch(() => {}));
+  listen("sync-status", (e) => render(e.payload));
+  invoke("sync_status").then(render, () => {});
 }

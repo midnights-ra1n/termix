@@ -46,6 +46,31 @@ pub fn merge(into: &mut Records, incoming: &Records) -> BTreeSet<String> {
     changed
 }
 
+/// Both versions of a record edited on two devices between two syncs. Last-writer-wins already picked one;
+/// the user can keep the other.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Conflict {
+    pub mine: Rec,
+    pub theirs: Rec,
+}
+
+/// Records the user edits by hand: hosts, folders, settings (secrets are opaque, workspaces per device).
+fn user_edited(key: &str) -> bool {
+    key == "settings" || key.starts_with("host:") || key.starts_with("folder:")
+}
+
+/// Merges records from another device into the store, noting a conflict when one of them overwrites (or is
+/// beaten by) a change this device has not delivered yet.
+pub fn merge_into(store: &mut Store, incoming: &Records, me: &str) -> BTreeSet<String> {
+    for (k, theirs) in incoming {
+        let Some(mine) = store.records.get(k) else { continue };
+        if user_edited(k) && store.dirty.contains(k) && mine.dev == me && theirs.dev != me && theirs.v != mine.v {
+            store.conflicts.insert(k.clone(), Conflict { mine: mine.clone(), theirs: theirs.clone() });
+        }
+    }
+    merge(&mut store.records, incoming)
+}
+
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
@@ -68,6 +93,8 @@ pub struct Store {
     pub peers: Vec<Peer>,
     pub last_ok: i64,
     pub last_error: String,
+    /// Concurrent edits waiting for the user's choice.
+    pub conflicts: BTreeMap<String, Conflict>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -342,9 +369,15 @@ pub async fn server_login(url: &str, user: &str, password: &str, device: &str) -
     Ok((token.into(), v["salt"].as_str().unwrap_or_default().into()))
 }
 
-/// Pushes local changes, then pulls everything newer than the last pull.
-pub async fn server_sync(url: &str, token: &str, store: &mut Store) -> Result<BTreeSet<String>> {
+/// Pulls everything newer than the last pull (conflicts are spotted while our changes are still dirty),
+/// then pushes local changes.
+pub async fn server_sync(url: &str, token: &str, store: &mut Store, me: &str) -> Result<BTreeSet<String>> {
     let c = http();
+    let v: Value =
+        checked(c.get(format!("{}/api/records?after={}", base(url), store.server_seq)).bearer_auth(token).send().await?).await?.json().await?;
+    let incoming = parse_records(&v["records"]);
+    store.server_seq = v["seq"].as_i64().unwrap_or(store.server_seq);
+    let changed = merge_into(store, &incoming, me);
     if !store.dirty.is_empty() {
         let recs: Vec<Value> = store
             .dirty
@@ -354,11 +387,7 @@ pub async fn server_sync(url: &str, token: &str, store: &mut Store) -> Result<BT
         checked(c.post(format!("{}/api/records", base(url))).bearer_auth(token).json(&json!({ "records": recs })).send().await?).await?;
         store.dirty.clear();
     }
-    let v: Value =
-        checked(c.get(format!("{}/api/records?after={}", base(url), store.server_seq)).bearer_auth(token).send().await?).await?.json().await?;
-    let incoming = parse_records(&v["records"]);
-    store.server_seq = v["seq"].as_i64().unwrap_or(store.server_seq);
-    Ok(merge(&mut store.records, &incoming))
+    Ok(changed)
 }
 
 pub fn parse_records(v: &Value) -> Records {
@@ -395,6 +424,27 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_edits_are_kept_as_conflicts() {
+        let mut store = Store::default();
+        store.put("host:1", Some(json!("mine")), "me");
+        store.put("folder:1", Some(json!("f")), "me");
+        let theirs: Records = [
+            ("host:1".to_string(), rec(json!("theirs"), i64::MAX, "other")),
+            // Same value on both sides, or a change this device already delivered: no conflict.
+            ("folder:1".to_string(), rec(json!("f"), i64::MAX, "other")),
+        ]
+        .into();
+        merge_into(&mut store, &theirs, "me");
+        assert_eq!(store.records["host:1"].v, Some(json!("theirs")));
+        assert_eq!(store.conflicts.keys().collect::<Vec<_>>(), ["host:1"]);
+        assert_eq!(store.conflicts["host:1"].mine.v, Some(json!("mine")));
+        store.dirty.clear();
+        store.conflicts.clear();
+        merge_into(&mut store, &[("host:1".to_string(), rec(json!("later"), i64::MAX, "z"))].into(), "me");
+        assert!(store.conflicts.is_empty());
+    }
+
+    #[test]
     fn vault_roundtrip_and_wrong_key() {
         let salt = random_salt();
         let k = Vault::derive("correct horse", &salt).unwrap();
@@ -426,10 +476,10 @@ mod tests {
         assert!(!salt.is_empty());
         let mut a = Store::default();
         a.put("host:live", Some(json!({ "id": "live", "name": "from a" })), "a");
-        server_sync(&url, &tok, &mut a).await.unwrap();
+        server_sync(&url, &tok, &mut a, "a").await.unwrap();
         assert!(a.dirty.is_empty());
         let mut b = Store::default();
-        let changed = server_sync(&url, &tok, &mut b).await.unwrap();
+        let changed = server_sync(&url, &tok, &mut b, "b").await.unwrap();
         assert!(changed.contains("host:live"));
         assert_eq!(b.records["host:live"].v, a.records["host:live"].v);
         assert!(server_login(&url, "admin", "nope", "test").await.is_err());

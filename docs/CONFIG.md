@@ -57,6 +57,7 @@ copy_on_select = false
 suggestions = true           # prédiction des commandes (texte grisé)
 tmux = false                 # shell dans tmux (si installé sur le serveur) : survit à la déconnexion
                              # par hôte, "tmux": "on" / "off" dans hosts.json l'emporte ; vide = ce réglage
+keep_focus = true            # un clic dans la liste des hôtes ou le panneau de droite garde la saisie dans le terminal
 font_weight = "normal"       # normal, 500, bold
 letter_spacing = 0           # en px, peut être négatif
 padding = 8                  # marge intérieure des terminaux, en px
@@ -157,6 +158,11 @@ server_url = ""         # ex. https://sync.example.com
 user = ""
 device_id = "…"         # généré au premier lancement, ne pas modifier
 device_name = "MacBook" # nom affiché sur les autres appareils
+interval_secs = 30      # 5 = en direct ; 0 = seulement au lancement et après une modification
 ```
+
+Une synchro a lieu à chaque lancement, après chaque modification locale, puis toutes les `interval_secs` secondes. L'icône nuage de la barre du haut en donne l'état (à jour, en cours, erreur, conflits) ; un clic synchronise, ou ouvre la page Synchronisation en cas de problème.
+
+**Conflits** : quand un hôte, un dossier ou les réglages ont été modifiés sur deux appareils entre deux synchros, la version la plus récente est appliquée et le conflit apparaît dans Réglages → Synchronisation avec les différences. « Garder la mienne » republie la version de cet appareil sur tous les autres.
 
 L'état de la synchro (enregistrements, appareils appairés) est dans `sync.json`. Le jeton du serveur, la clé du coffre, les clés d'appairage et les clés SSH synchronisées sont dans le trousseau du système. Supprimer `sync.json` repart d'un état vierge : les hôtes locaux sont renvoyés à la synchro suivante.

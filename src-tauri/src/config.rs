@@ -60,7 +60,7 @@ pub struct Settings {
     pub sync: Sync,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Sync {
     /// off | server | p2p
@@ -70,6 +70,14 @@ pub struct Sync {
     /// Stable id of this device (records, workspaces, pairing).
     pub device_id: String,
     pub device_name: String,
+    /// Seconds between two syncs (5 = live). 0 = only at launch and after a local change.
+    pub interval_secs: u32,
+}
+
+impl Default for Sync {
+    fn default() -> Self {
+        Self { mode: "off".into(), server_url: String::new(), user: String::new(), device_id: String::new(), device_name: String::new(), interval_secs: 30 }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -104,6 +112,8 @@ pub struct Terminal {
     pub suggestions: bool,
     /// Open shells inside tmux (when installed on the server) so jobs survive a disconnect.
     pub tmux: bool,
+    /// Clicking the sidebar or the side panel gives the keyboard back to the terminal.
+    pub keep_focus: bool,
     /// normal | 500 | bold
     pub font_weight: String,
     pub letter_spacing: f32,
@@ -165,6 +175,7 @@ impl Default for Terminal {
             copy_on_select: false,
             suggestions: true,
             tmux: false,
+            keep_focus: true,
             font_weight: "normal".into(),
             letter_spacing: 0.0,
             padding: 8,
