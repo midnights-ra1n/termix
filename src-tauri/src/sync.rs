@@ -342,7 +342,9 @@ fn http() -> reqwest::Client {
 }
 
 fn base(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_string()
+    let u = url.trim().trim_end_matches('/');
+    // "sync.example.com" is a relative URL for reqwest ("builder error"): assume HTTPS.
+    if u.contains("://") { u.into() } else { format!("https://{u}") }
 }
 
 async fn checked(r: reqwest::Response) -> Result<reqwest::Response> {
@@ -405,6 +407,20 @@ pub fn parse_records(v: &Value) -> Records {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn base_defaults_to_https() {
+        assert_eq!(base(" sync.example.com/ "), "https://sync.example.com");
+        assert_eq!(base("http://10.0.0.2:8080/"), "http://10.0.0.2:8080");
+    }
+
+    #[tokio::test]
+    async fn network_errors_show_their_cause() {
+        let err = server_login("http://127.0.0.1:1", "u", "p", "d").await.unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains(": "), "{msg}");
+        println!("{msg}");
+    }
 
     fn rec(v: Value, ts: i64, dev: &str) -> Rec {
         Rec { v: Some(v), ts, dev: dev.into() }

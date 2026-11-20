@@ -10,6 +10,11 @@ const PLATFORMS = [
   ["darwin-x86_64", /x64\.app\.tar\.gz$/],
   ["linux-x86_64", /amd64\.AppImage$/],
   ["linux-aarch64", /aarch64\.AppImage$/],
+  // .deb/.rpm installs look up `{os}-{arch}-{deb|rpm}` first; without them they got the AppImage and failed with "invalid updater format".
+  ["linux-x86_64-deb", /amd64\.deb$/],
+  ["linux-aarch64-deb", /arm64\.deb$/],
+  ["linux-x86_64-rpm", /x86_64\.rpm$/],
+  ["linux-aarch64-rpm", /aarch64\.rpm$/],
   ["windows-x86_64", /x64-setup\.exe$/],
   ["windows-aarch64", /arm64-setup\.exe$/],
 ];

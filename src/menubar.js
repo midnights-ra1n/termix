@@ -57,6 +57,9 @@ export function initMenubar() {
       h("button.close", { ...keep, type: "button", "aria-label": t("close_window"), onclick: () => win.close() }, glyph("close"))));
   document.getElementById("app").prepend(bar);
   document.body.classList.add("menubar");
+  // Our own resize edges: the native ones sit in the transparent shadow margin on Linux and are swallowed by the web view on Windows.
+  for (const dir of ["North", "South", "East", "West", "NorthEast", "NorthWest", "SouthEast", "SouthWest"])
+    document.body.append(h("div.rz." + dir, { onmousedown: (e) => e.button === 0 && (e.preventDefault(), win.startResizeDragging(dir)) }));
   // Square corners and the "restore" glyph while maximized / full screen.
   const sync = async () => {
     const m = (await win.isMaximized()) || (await win.isFullscreen());

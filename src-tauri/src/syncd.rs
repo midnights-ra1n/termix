@@ -165,7 +165,7 @@ async fn sync_round(app: &AppHandle, ctl: &SyncCtl, settings: &config::Settings)
             store.last_ok = sync::now_ms();
             store.last_error.clear();
         }
-        Err(err) => store.last_error = err.to_string(),
+        Err(err) => store.last_error = format!("{err:#}"),
     }
     finish(app, &mut store, vault.as_ref()).map_err(e)?;
     result.map_err(e)

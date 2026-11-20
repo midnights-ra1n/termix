@@ -59,6 +59,16 @@ body.menubar #app { grid-template-rows: var(--mb) var(--bar) minmax(0, 1fr); }
 :root[data-desktop*="KDE"] { --win-r: 8px; --win-m: 24px; --win-shadow: 0 6px 24px rgba(0, 0, 0, .45), 0 0 0 1px rgba(0, 0, 0, .2); } /* Breeze */
 #menubar button { cursor: default; transition: background-color .18s ease, color .18s ease; }
 #menubar { grid-column: 1 / -1; position: relative; z-index: 11; display: flex; align-items: center; height: var(--mb); background: var(--scene); border-bottom: 1px solid var(--indigo); }
+/* Resize edges (menubar.js): from the window edge across the shadow margin to a few px inside the visible frame. */
+.rz { --g: calc(var(--win-m, 0px) + 5px); position: fixed; z-index: 10000; }
+html[data-platform="windows"] .rz { --win-m: 0px; }
+body.maximized .rz { display: none; }
+.rz.North, .rz.South { left: var(--g); right: var(--g); height: var(--g); cursor: ns-resize; }
+.rz.East, .rz.West { top: var(--g); bottom: var(--g); width: var(--g); cursor: ew-resize; }
+.rz.North { top: 0; } .rz.South { bottom: 0; } .rz.East { right: 0; } .rz.West { left: 0; }
+.rz.NorthEast, .rz.NorthWest, .rz.SouthEast, .rz.SouthWest { width: calc(var(--g) + 6px); height: calc(var(--g) + 6px); }
+.rz.NorthWest { top: 0; left: 0; cursor: nwse-resize; } .rz.SouthEast { bottom: 0; right: 0; cursor: nwse-resize; }
+.rz.NorthEast { top: 0; right: 0; cursor: nesw-resize; } .rz.SouthWest { bottom: 0; left: 0; cursor: nesw-resize; }
 .mb-icon { width: 16px; height: 16px; margin: 0 6px 0 12px; }
 .mb-menus { display: flex; gap: 1px; }
 .mb-title { height: 24px; padding: 0 9px; border: 0; border-radius: 6px; background-color: transparent; color: var(--mute); font-size: 12.5px; }

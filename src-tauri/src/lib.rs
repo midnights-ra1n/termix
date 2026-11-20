@@ -33,7 +33,8 @@ fn lbl(app: &AppHandle, key: &str, fallback: &str) -> String {
 
 type R<T> = Result<T, String>;
 fn e<E: std::fmt::Display>(err: E) -> String {
-    err.to_string()
+    // `{:#}` makes anyhow print the whole cause chain ("error sending request" alone hides DNS/TLS/refused).
+    format!("{err:#}")
 }
 
 // ---------- settings / hosts ----------
