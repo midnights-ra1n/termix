@@ -340,28 +340,93 @@ pub fn tray_hosts<'a>(doc: &'a HostsDoc, mode: &str, count: usize, recent: &[Str
     v
 }
 
+// Each keychain read of an ad-hoc signed app asks the user again after every update, so secrets are
+// read at most once per launch, and on macOS all live in one item ("secrets"): one prompt, not one per host.
+// Elsewhere one item per secret stays (Windows caps an item at 2.5 KB).
+const SINGLE: bool = cfg!(target_os = "macos");
+static SECRETS: std::sync::Mutex<Option<std::collections::HashMap<String, Option<String>>>> = std::sync::Mutex::new(None);
+static DENIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn entry(id: &str) -> keyring::Result<keyring::Entry> {
     keyring::Entry::new("termix", id)
 }
+fn read(e: keyring::Result<keyring::Entry>) -> Option<String> {
+    if denied() {
+        return None;
+    }
+    match e.and_then(|e| e.get_password()) {
+        Ok(v) => Some(v),
+        Err(keyring::Error::NoEntry) => None,
+        Err(_) => {
+            DENIED.store(true, std::sync::atomic::Ordering::Relaxed);
+            None
+        }
+    }
+}
+/// The user refused keychain access this launch: secrets read as missing must not be taken as deleted.
+pub fn denied() -> bool {
+    DENIED.load(std::sync::atomic::Ordering::Relaxed)
+}
+fn with_secrets<T>(f: impl FnOnce(&mut std::collections::HashMap<String, Option<String>>) -> T) -> T {
+    let mut g = SECRETS.lock().unwrap();
+    let m = g.get_or_insert_with(|| {
+        let all = if SINGLE { read(entry("secrets")) } else { None };
+        let all: BTreeMap<String, String> = all.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+        all.into_iter().map(|(k, v)| (k, Some(v))).collect()
+    });
+    f(m)
+}
+fn persist(m: &std::collections::HashMap<String, Option<String>>) -> anyhow::Result<()> {
+    if denied() {
+        anyhow::bail!("accès au trousseau refusé : relance Termix et autorise-le");
+    }
+    let all: BTreeMap<&String, &String> = m.iter().filter_map(|(k, v)| Some((k, v.as_ref()?))).collect();
+    Ok(entry("secrets")?.set_password(&serde_json::to_string(&all)?)?)
+}
 /// `id` is "<host_id>" for the password or "<host_id>:passphrase" for the key passphrase.
 pub fn secret_get(id: &str) -> Option<String> {
-    if let Some(v) = entry(id).ok()?.get_password().ok() {
-        return Some(v);
-    }
-    // Secrets saved under the former name (RustTerm) move to the new keychain service on first use.
-    let v = keyring::Entry::new("rustterm", id).ok()?.get_password().ok()?;
-    let _ = secret_set(id, &v);
-    Some(v)
+    with_secrets(|m| {
+        if let Some(v) = m.get(id) {
+            return v.clone();
+        }
+        // Per-secret items: the storage outside macOS, and the former layout there (Termix, then RustTerm).
+        let own = read(entry(id));
+        let old = if own.is_none() { read(keyring::Entry::new("rustterm", id)) } else { None };
+        let v = own.clone().or(old.clone());
+        m.insert(id.into(), v.clone());
+        if v.is_some() && (SINGLE || old.is_some()) {
+            let moved = if SINGLE { persist(m) } else { entry(id).and_then(|e| e.set_password(v.as_deref().unwrap())).map_err(Into::into) };
+            if moved.is_ok() {
+                let _ = keyring::Entry::new(if own.is_some() { "termix" } else { "rustterm" }, id).and_then(|e| e.delete_credential());
+            }
+        }
+        v
+    })
 }
 pub fn secret_set(id: &str, value: &str) -> anyhow::Result<()> {
-    if value.is_empty() {
-        match entry(id)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.into()),
+    with_secrets(|m| {
+        let v = (!value.is_empty()).then(|| value.to_string());
+        if SINGLE {
+            let before = m.insert(id.into(), v);
+            let r = persist(m);
+            if r.is_err() {
+                match before {
+                    Some(b) => m.insert(id.into(), b),
+                    None => m.remove(id),
+                };
+            }
+            return r;
         }
-    } else {
-        Ok(entry(id)?.set_password(value)?)
-    }
+        match &v {
+            Some(v) => entry(id)?.set_password(v)?,
+            None => match entry(id)?.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => {}
+                Err(e) => return Err(e.into()),
+            },
+        }
+        m.insert(id.into(), v);
+        Ok(())
+    })
 }
 
 #[cfg(test)]

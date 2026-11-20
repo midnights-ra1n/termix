@@ -135,6 +135,10 @@ async fn sync_round(app: &AppHandle, ctl: &SyncCtl, settings: &config::Settings)
     let vault = Vault::load();
     let mut store = Store::load();
     sync::record_local(&mut store, &HostsDoc::load(), &settings, vault.as_ref(), &config::secret_get, &dev);
+    if config::denied() {
+        // Unreadable secrets would look deleted and be wiped on every device: skip the round, store unsaved.
+        return Err("accès au trousseau refusé : relance Termix et autorise-le".into());
+    }
     let result: anyhow::Result<()> = if mode == "server" {
         match config::secret_get("sync:token") {
             Some(tok) => sync::server_sync(&settings.sync.server_url, &tok, &mut store, &dev).await.map(|_| ()),
