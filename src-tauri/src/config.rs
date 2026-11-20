@@ -121,6 +121,10 @@ pub struct Terminal {
     pub padding: u32,
     /// Bold text in the bright ANSI colours (classic xterm behaviour).
     pub bold_is_bright: bool,
+    /// Show the focus border when the tab has a single pane (it always shows once split).
+    pub focus_single: bool,
+    /// Focus border width, in px.
+    pub focus_width: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -180,6 +184,8 @@ impl Default for Terminal {
             letter_spacing: 0.0,
             padding: 8,
             bold_is_bright: false,
+            focus_single: false,
+            focus_width: 2,
         }
     }
 }

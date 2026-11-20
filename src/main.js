@@ -190,6 +190,8 @@ async function openSettings(section = "general") {
     letter_spacing: num(s.terminal.letter_spacing, -2, 4, 0.5),
     padding: num(s.terminal.padding, 0, 40, 2),
     bold_is_bright: sw(s.terminal.bold_is_bright),
+    focus_single: sw(s.terminal.focus_single),
+    focus_width: num(s.terminal.focus_width, 1, 6),
     font_family: fontPicker(s.terminal.font_family, TERM_FONTS),
     font_size: num(s.terminal.font_size, 8, 40),
     line_height: num(s.terminal.line_height, 1, 2, 0.05),
@@ -263,8 +265,8 @@ async function openSettings(section = "general") {
       h("div.span2", {}, field(t("term_font"), f.font_family)),
       field(t("size"), f.font_size), field(t("line_height"), f.line_height),
       field(t("cursor"), f.cursor_style), field(t("scrollback"), f.scrollback),
-      field(t("font_weight"), f.font_weight), field(t("letter_spacing"), f.letter_spacing), field(t("term_padding"), f.padding)),
-      h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("bold_bright"), f.bold_is_bright), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint")), row(t("tmux_setting"), f.tmux, t("tmux_setting_hint")), row(t("keep_focus"), f.keep_focus, t("keep_focus_hint"))),
+      field(t("font_weight"), f.font_weight), field(t("letter_spacing"), f.letter_spacing), field(t("term_padding"), f.padding), field(t("focus_width"), f.focus_width)),
+      h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("bold_bright"), f.bold_is_bright), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint")), row(t("tmux_setting"), f.tmux, t("tmux_setting_hint")), row(t("keep_focus"), f.keep_focus, t("keep_focus_hint")), row(t("focus_single"), f.focus_single, t("focus_single_hint"))),
       h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => { clearLocalHistory(); toast(t("history_cleared"), "success"); } }, t("clear_history")))],
     ssh: [t("set_ssh"), h("div.form-grid", {}, h("div.span2", {}, field(t("agent_socket"), f.agent_socket, t("agent_hint"))), agents,
       field(t("keepalive"), f.keepalive)),
@@ -294,7 +296,7 @@ async function openSettings(section = "general") {
 
   const n = (el, d) => (el.value !== "" && Number.isFinite(+el.value) ? +el.value : d);
   Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.read(), ui_font_size: n(f.ui_font_size, 13), accent: "", colors: Object.fromEntries(colors.filter((c) => c.on.checked).map((c) => [c.k, c.pick.value])), density: f.density.value });
-  Object.assign(s.terminal, { font_family: f.font_family.read(), font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, keep_focus: f.keep_focus.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked });
+  Object.assign(s.terminal, { font_family: f.font_family.read(), font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, keep_focus: f.keep_focus.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked, focus_single: f.focus_single.checked, focus_width: Math.min(6, Math.max(1, n(f.focus_width, 2))) });
   Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
   Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30) });
   s.keybindings = kb;
@@ -384,8 +386,9 @@ async function boot() {
   initPanes();
   initPanel();
   applyAppearance();
-  // Show the window only once the first frame is ready: no white flash.
-  requestAnimationFrame(() => invoke("app_ready"));
+  // Show the window once the UI is built (it starts hidden with the theme background: no white flash).
+  // Not in requestAnimationFrame: a hidden window never paints, so it only fired via the 3 s fallback.
+  invoke("app_ready");
   listen("menu", (e) => ACTIONS[e.payload]?.());
   listen("connect-host", (e) => { const host = S.hosts.hosts.find((x) => x.id === e.payload); if (host) newTab(host); });
   listen("host-status", (e) => { S.status = e.payload; renderStatus(); });

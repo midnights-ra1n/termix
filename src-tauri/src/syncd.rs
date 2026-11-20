@@ -21,7 +21,7 @@ pub struct SyncCtl {
 
 /// Tells the title bar where sync stands.
 fn emit_status(app: &AppHandle) {
-    let _ = app.emit("sync-status", sync_status(app.clone()));
+    let _ = app.emit("sync-status", status(app));
 }
 
 pub fn kick(app: &AppHandle) {
@@ -173,9 +173,14 @@ async fn sync_round(app: &AppHandle, ctl: &SyncCtl, settings: &config::Settings)
 
 // ---------- commands ----------
 
+/// Async so the keychain read runs off the main thread (it froze the window at launch).
 #[tauri::command]
-pub fn sync_status(app: AppHandle) -> Value {
-    let s = sync_settings(&app).sync;
+pub async fn sync_status(app: AppHandle) -> Value {
+    status(&app)
+}
+
+fn status(app: &AppHandle) -> Value {
+    let s = sync_settings(app).sync;
     let store = Store::load();
     let ctl = app.state::<SyncCtl>();
     let paired: std::collections::BTreeSet<&str> = store.peers.iter().map(|p| p.id.as_str()).collect();

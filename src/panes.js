@@ -409,6 +409,8 @@ function termOptions() {
 export function applyTerminalSettings(theme) {
   if (theme) xtheme = theme;
   document.documentElement.style.setProperty("--term-pad", S.settings.terminal.padding + "px");
+  document.documentElement.style.setProperty("--focus-w", Math.min(6, Math.max(1, S.settings.terminal.focus_width || 2)) + "px");
+  document.body.classList.toggle("focus-single", S.settings.terminal.focus_single);
   // xterm measures the cell once per font change: wait until a bundled font is actually loaded.
   const { font_family: ff, font_size: fs } = S.settings.terminal;
   Promise.all([`${fs}px ${ff}`, `bold ${fs}px ${ff}`].map((f) => document.fonts.load(f))).catch(() => {}).then(() => {

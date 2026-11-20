@@ -62,6 +62,8 @@ font_weight = "normal"       # normal, 500, bold
 letter_spacing = 0           # en px, peut être négatif
 padding = 8                  # marge intérieure des terminaux, en px
 bold_is_bright = false       # texte gras dans les couleurs ANSI vives
+focus_single = false         # bordure de focus aussi quand l'onglet n'a qu'une session (toujours visible une fois divisé)
+focus_width = 2              # épaisseur de la bordure de focus, en px (1 à 6)
 
 [behavior]
 tray_icon = true             # icône barre des menus (macOS) / zone de notification (GNOME, KDE, Windows)

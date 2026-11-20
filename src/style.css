@@ -55,32 +55,37 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 
 /* ---------- Windows/Linux title bar: same menus as macOS + Windows-style buttons (menubar.js) ---------- */
 body.menubar #app { grid-template-rows: var(--mb) var(--bar) minmax(0, 1fr); }
-:root { --mb: 32px; --win-r: 12px; } /* GNOME / libadwaita corner */
-:root[data-desktop*="KDE"] { --win-r: 8px; } /* Breeze */
+:root { --mb: 32px; --win-r: 12px; --win-m: 12px; --win-shadow: 0 3px 9px 1px rgba(0, 0, 0, .35), 0 0 0 1px rgba(0, 0, 0, .23); } /* GNOME / libadwaita */
+:root[data-desktop*="KDE"] { --win-r: 8px; --win-m: 24px; --win-shadow: 0 6px 24px rgba(0, 0, 0, .45), 0 0 0 1px rgba(0, 0, 0, .2); } /* Breeze */
+#menubar button { cursor: default; transition: background-color .18s ease, color .18s ease; }
 #menubar { grid-column: 1 / -1; position: relative; z-index: 11; display: flex; align-items: center; height: var(--mb); background: var(--scene); border-bottom: 1px solid var(--indigo); }
 .mb-icon { width: 16px; height: 16px; margin: 0 6px 0 12px; }
 .mb-menus { display: flex; gap: 1px; }
-.mb-title { height: 24px; padding: 0 9px; border: 0; border-radius: 6px; background: none; color: var(--mute); font-size: 12.5px; }
+.mb-title { height: 24px; padding: 0 9px; border: 0; border-radius: 6px; background-color: transparent; color: var(--mute); font-size: 12.5px; }
 .mb-title:hover, .mb-title.on { background: var(--indigo); color: var(--ink); }
 .mb-drop { position: absolute; top: calc(var(--mb) - 3px); min-width: 250px; max-height: calc(100vh - var(--mb) - 12px); overflow: auto; padding: 5px; display: flex; flex-direction: column;
   background: var(--scene); border: 1px solid var(--brume); border-radius: 10px; box-shadow: 0 20px 40px -18px rgba(0, 0, 0, .6); animation: fade .12s var(--ease); }
-.mb-item { display: flex; align-items: center; justify-content: space-between; gap: 28px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: none; text-align: left; white-space: nowrap; }
+.mb-item { display: flex; align-items: center; justify-content: space-between; gap: 28px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background-color: transparent; text-align: left; white-space: nowrap; }
 .mb-item:hover, .mb-item:focus-visible { background: var(--accent); color: var(--onAccent); outline: none; }
 .mb-key { color: var(--faint); font-size: 12px; }
 .mb-item:hover .mb-key, .mb-item:focus-visible .mb-key { color: inherit; opacity: .85; }
 .mb-sep { height: 1px; margin: 4px 8px; background: var(--indigo); }
 .wc { display: flex; align-self: stretch; }
-.wc button { width: 46px; border: 0; border-radius: 0; background: none; color: var(--ink); display: grid; place-items: center; }
+.wc button { width: 46px; border: 0; border-radius: 0; background-color: transparent; color: var(--ink); display: grid; place-items: center; }
 .wc button:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); }
 .wc button.close:hover { background: #C42B1C; color: #FFFFFF; }
 .wc span { display: grid; }
 .wc .restore, body.maximized .wc .max { display: none; }
 body.maximized .wc .restore { display: grid; }
-/* Linux: undecorated + transparent window, so the rounded corners and the thin edge are ours. Windows 11 rounds them itself. */
+/* Linux: undecorated + transparent window, so corners, edge and shadow are ours (drawn in a transparent margin, where the
+   window still takes resize drags). Windows 11 rounds and shadows the window itself. */
 html[data-platform="linux"], html[data-platform="linux"] body { background: transparent !important; }
-html[data-platform="linux"] #app { background: var(--bg); border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); border-radius: var(--win-r); overflow: hidden; }
-html[data-platform="linux"] .backdrop { border-radius: var(--win-r); }
-html[data-platform="linux"] body.maximized #app, html[data-platform="linux"] body.maximized .backdrop { border: 0; border-radius: 0; }
+html[data-platform="linux"] body { padding: var(--win-m); }
+html[data-platform="linux"] #app { height: 100%; background: var(--bg); border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); border-radius: var(--win-r); overflow: hidden; box-shadow: var(--win-shadow); }
+html[data-platform="linux"] .backdrop { inset: var(--win-m); border-radius: var(--win-r); }
+html[data-platform="linux"] #toasts { right: calc(16px + var(--win-m)); bottom: calc(16px + var(--win-m)); }
+html[data-platform="linux"] body.maximized { --win-m: 0px; }
+html[data-platform="linux"] body.maximized #app, html[data-platform="linux"] body.maximized .backdrop { border: 0; border-radius: 0; box-shadow: none; }
 
 /* ---------- sidebar ---------- */
 .search { padding: 12px 12px 8px; }
@@ -142,11 +147,13 @@ html[data-platform="linux"] body.maximized #app, html[data-platform="linux"] bod
 .split.h > .gutter { width: 8px; cursor: col-resize; }
 .split.v > .gutter { height: 8px; cursor: row-resize; }
 .gutter:hover { background: var(--brume); border-radius: 9999px; }
-.pane { flex: 1; display: flex; min-width: 0; min-height: 0; border-radius: 12px; border: 2px solid transparent; overflow: hidden; background: var(--term-bg, var(--bg)); }
+.pane { flex: 1; display: flex; min-width: 0; min-height: 0; border-radius: 12px; border: var(--focus-w, 2px) solid transparent; overflow: hidden; background: var(--term-bg, var(--bg)); }
 .split .pane { border-color: var(--indigo); }
 /* The pane that gets the keyboard, split or not; brighter while it actually has focus. */
 .pane.focused { border-color: var(--brume); }
 .pane.focused:focus-within { border-color: color-mix(in srgb, var(--focus) 75%, transparent); }
+/* A lone pane (not split) shows no focus border unless Settings → Terminal asks for it. */
+body:not(.focus-single) #panes > .pane.focused { border-color: transparent; }
 .pane.drop { border-color: var(--accent) !important; }
 .term { flex: 1; padding: var(--term-pad, 8px) calc(var(--term-pad, 8px) / 2) calc(var(--term-pad, 8px) / 2) calc(var(--term-pad, 8px) * 1.5); min-width: 0; min-height: 0; overflow: hidden; }
 .term .xterm { height: 100%; }
