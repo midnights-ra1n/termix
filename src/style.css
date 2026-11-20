@@ -116,7 +116,7 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 .term { flex: 1; padding: var(--term-pad, 8px) calc(var(--term-pad, 8px) / 2) calc(var(--term-pad, 8px) / 2) calc(var(--term-pad, 8px) * 1.5); min-width: 0; min-height: 0; overflow: hidden; }
 .term .xterm { height: 100%; }
 /* command prediction */
-.ghost { position: absolute; z-index: 5; pointer-events: none; white-space: pre; color: var(--faint); opacity: .75; }
+.suggest-ghost { position: absolute; z-index: 5; pointer-events: none; white-space: pre; color: var(--faint); opacity: .75; }
 .suggest-list { position: absolute; z-index: 6; list-style: none; margin: 0; padding: 4px; min-width: 220px; max-width: 70%;
   background: var(--scene); border: 1px solid var(--brume); border-radius: 10px; box-shadow: 0 16px 32px -16px rgba(0, 0, 0, .7); font-size: 12px; }
 .suggest-list li { padding: 4px 12px; border-radius: 6px; white-space: pre; overflow: hidden; text-overflow: ellipsis; color: var(--mute); cursor: pointer; }

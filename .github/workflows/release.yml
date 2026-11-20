@@ -16,7 +16,8 @@ permissions:
 
 concurrency:
   group: release-${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }}
-  cancel-in-progress: true
+  # Rolling beta/nightly: the newest push wins. Stable: each version waits for the previous release to finish.
+  cancel-in-progress: ${{ github.ref_name != 'stable' }}
 
 jobs:
   prepare:

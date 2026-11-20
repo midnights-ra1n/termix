@@ -35,7 +35,7 @@ export class Suggest {
   constructor(term, hostId, send, isEnabled) {
     Object.assign(this, { term, hostId, send, isEnabled, remote: [], local: loadLocal(hostId), cmd: null, suffix: "", list: null, sel: 0 });
     this.ghost = document.createElement("div");
-    this.ghost.className = "ghost";
+    this.ghost.className = "suggest-ghost";
     this.ghost.setAttribute("aria-hidden", "true");
     this.menu = document.createElement("ul");
     this.menu.className = "suggest-list";
