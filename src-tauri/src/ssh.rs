@@ -502,8 +502,8 @@ pub fn tmux_kill_cmd(name: &str) -> Result<String> {
 
 // ---------- docker containers ----------
 
-/// Falls back to passwordless sudo when the user is not in the docker group.
-pub const DOCKER_PS_CMD: &str = r#"sh -c 'command -v docker >/dev/null 2>&1 || { echo NODOCKER; exit 0; }; F="{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}"; docker ps -a --format "$F" 2>&1 || sudo -n docker ps -a --format "$F" 2>/dev/null; true'"#;
+/// Read-only listing, nothing else is ever run against the daemon.
+pub const DOCKER_PS_CMD: &str = r#"sh -c 'command -v docker >/dev/null 2>&1 || { echo NODOCKER; exit 0; }; docker ps -a --format "{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}" 2>&1; true'"#;
 
 #[derive(Serialize, Debug, PartialEq)]
 pub struct Container {
@@ -568,8 +568,6 @@ mod integration_tests {
         assert_eq!(d.error, "");
         let denied = parse_docker("permission denied while trying to connect to the Docker daemon socket\n");
         assert!(denied.installed && denied.containers.is_empty() && denied.error.starts_with("permission denied"));
-        // sudo fallback succeeded after the docker error line
-        assert_eq!(parse_docker("permission denied\napp|img|running|Up 1 minute\n").containers.len(), 1);
     }
 }
 

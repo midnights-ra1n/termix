@@ -144,14 +144,14 @@ async function docker() {
   try { d = await invoke("docker_ps", { id: p.session }); } catch (e) { return body.replaceChildren(h("p.error", {}, String(e))); }
   if (p !== pane || tab !== "docker") return;
   if (!d.installed) return body.replaceChildren(h("p.empty", {}, t("no_docker")));
-  if (d.error) return body.replaceChildren(h("p.error.small", {}, d.error), h("p.mute.small", {}, t("docker_perm")));
+  if (d.error) return body.replaceChildren(h("p.error.small", {}, d.error));
   const up = d.containers.filter((c) => c.state === "running").length;
   body.replaceChildren(
     h("div.list-head", {}, h("span", {}, t("containers")), h("span.mono.mute", {}, `${up} / ${d.containers.length}`)),
     d.containers.length
       ? h("ul.items", { role: "list" }, ...d.containers.map((c) => h("li.item", { title: `${c.name} · ${c.status}` },
         h("span.status" + (DOT[c.state] ? "." + DOT[c.state] : ""), { role: "img", "aria-label": c.state }),
-        h("div.item-text", {}, h("span.item-name", {}, c.name), h("span.item-meta.mono", {}, `${c.image} · ${c.status}`)))))
+        h("div.item-text", {}, h("span.item-name", {}, c.name), h("span.item-meta", {}, `${c.image.split("/").pop()} · ${c.status}`)))))
       : h("p.empty", {}, t("no_containers")));
 }
 
