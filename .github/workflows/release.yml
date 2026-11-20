@@ -132,7 +132,7 @@ jobs:
           CHANNEL: ${{ needs.prepare.outputs.channel }}
         shell: bash
         run: |
-          mkdir assets
-          gh release download "$TAG" -D assets -p '*.sig'
-          node scripts/updater-json.mjs "$VERSION" "RustTerm $VERSION ($CHANNEL)" assets "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
-          gh release upload "$TAG" assets/latest.json --clobber
+          mkdir sigs
+          gh release download "$TAG" -D sigs -p '*.sig'
+          node scripts/updater-json.mjs "$VERSION" "RustTerm $VERSION ($CHANNEL)" sigs "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          gh release upload "$TAG" sigs/latest.json --clobber
