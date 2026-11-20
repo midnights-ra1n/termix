@@ -14,7 +14,7 @@ use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
 
-const REPO: &str = "midnights-ra1n/RustTerm";
+const REPO: &str = "midnights-ra1n/termix";
 
 struct AppState {
     settings: Mutex<Settings>,

@@ -23,17 +23,31 @@ Les clés absentes du fichier gardent leur valeur par défaut ; un fichier inval
 ```toml
 [appearance]
 language = "auto"            # auto (langue du système), fr, en, es, de
-theme = "midnights"          # midnights, aube, nord, dracula, solarized, gruvbox, catppuccin, latte, tokyonight,
-                             # onedark, rosepine, everforest, kanagawa, github, system, ou un thème perso
-ui_font = "Geist, system-ui, sans-serif"
+theme = "termix"             # termix, midnights, aube, nord, dracula, solarized, solarizedlight, gruvbox, gruvboxlight,
+                             # catppuccin, latte, tokyonight, onedark, rosepine, everforest, kanagawa, github, monokai,
+                             # ayu, nightowl, tomorrow, palenight, poimandres, system, ou un thème perso
+# Polices intégrées : IBM Plex Sans, Inter, Geist Sans, Source Sans 3, Atkinson Hyperlegible (interface) ;
+# IBM Plex Mono, JetBrains Mono, Fira Code, Geist Mono, Source Code Pro, Cascadia Code (terminal).
+# Toute police installée sur le système marche aussi (pile CSS).
+ui_font = "\"IBM Plex Sans\", system-ui, sans-serif"
 ui_font_size = 13
 sidebar = true               # barre latérale des hôtes
 right_panel = true           # panneau Stats, SFTP, Docker, tmux
-accent = ""                  # couleur d'accent "#RRGGBB" ; vide = celle du thème
+accent = ""                  # ancien réglage, remplacé par [appearance.colors] accent
 density = "comfortable"      # comfortable, compact
 
+[appearance.colors]          # remplace des couleurs du thème actif ("#RRGGBB"), clé absente = couleur du thème
+# accent = "#C3BAFE"         # boutons, focus, jauges
+# bg = "#1A2030"             # fond de l'interface
+# scene = "#20283A"          # panneaux et barres
+# ink = "#EEEEEE"            # texte de l'interface
+# term_bg = "#101420"        # fond du terminal (par défaut = bg)
+# term_fg = "#E0E0E0"        # texte du terminal (par défaut = ink)
+# cursor = "#9CCBA9"
+# selection = "#48536C"
+
 [terminal]
-font_family = "\"Geist Mono\", \"JetBrains Mono\", Menlo, Consolas, monospace"
+font_family = "\"IBM Plex Mono\", Menlo, Consolas, monospace"
 font_size = 13
 line_height = 1.2
 cursor_style = "block"       # block, bar, underline
@@ -41,7 +55,8 @@ cursor_blink = true
 scrollback = 10000
 copy_on_select = false
 suggestions = true           # prédiction des commandes (texte grisé)
-tmux = true                  # shell dans tmux (si installé sur le serveur) : survit à la déconnexion
+tmux = false                 # shell dans tmux (si installé sur le serveur) : survit à la déconnexion
+                             # par hôte, "tmux": "on" / "off" dans hosts.json l'emporte ; vide = ce réglage
 font_weight = "normal"       # normal, 500, bold
 letter_spacing = 0           # en px, peut être négatif
 padding = 8                  # marge intérieure des terminaux, en px
@@ -108,7 +123,7 @@ Copier/coller : `Cmd+C`/`Cmd+V` sur macOS, `Ctrl+Shift+C`/`Ctrl+Shift+V` ailleur
 
 ## Thèmes
 
-Clés d'un thème : `bg scene vide indigo brume ink mute faint accent accent2 success error warn onAccent cursor selection`, plus la palette ANSI `black red green yellow blue magenta cyan white` et leurs variantes `brightBlack` … `brightWhite`. `dark = false` pour un thème clair.
+Clés d'un thème : `bg scene vide indigo brume ink mute faint accent accent2 success error warn onAccent cursor selection term_bg term_fg`, plus la palette ANSI `black red green yellow blue magenta cyan white` et leurs variantes `brightBlack` … `brightWhite`. `dark = false` pour un thème clair.
 Le thème `system` suit le mode clair/sombre et la couleur d'accent du système.
 
 ## Statut des hôtes

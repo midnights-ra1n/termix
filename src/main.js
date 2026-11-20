@@ -12,14 +12,9 @@ import { initPanel, refreshPanel } from "./panel.js";
 import { clearLocalHistory } from "./suggest.js";
 import { syncView } from "./sync.js";
 import appIcon from "../src-tauri/icons/128x128@2x.png";
-import "@fontsource/ibm-plex-sans/400.css";
-import "@fontsource/ibm-plex-sans/500.css";
-import "@fontsource/ibm-plex-sans/600.css";
-import "@fontsource/ibm-plex-mono/400.css";
-import "@fontsource/ibm-plex-mono/500.css";
-import "@fontsource/ibm-plex-mono/600.css";
+import { UI_FONTS, TERM_FONTS } from "./fonts.js";
 
-const REPO = "https://github.com/midnights-ra1n/RustTerm";
+const REPO = "https://github.com/midnights-ra1n/termix";
 
 // action -> handler. Labels come from i18n with the same key.
 const ACTIONS = {
@@ -124,12 +119,27 @@ function applyLayout() {
   refreshPanel();
 }
 
+// Colours the user can override on top of any theme (Appearance → Colours, or [appearance.colors]).
+const COLOR_KEYS = ["accent", "bg", "scene", "ink", "term_bg", "term_fg", "cursor", "selection"];
+const userColors = (a) => Object.fromEntries(Object.entries({ accent: a.accent, ...a.colors }).filter(([, v]) => /^#[0-9a-f]{6}$/i.test(v)));
+
+/** Bundled fonts + "custom", which shows a field for any installed font stack. `.read()` gives the CSS stack. */
+function fontPicker(value, list) {
+  const known = list.some(([, v]) => v === value);
+  const sel = h("select", {}, ...list.map(([l, v]) => h("option", { value: v, selected: v === value, style: `font-family: ${v}` }, l === "System" ? t("font_system") : l)),
+    h("option", { value: "", selected: !known }, t("font_custom")));
+  const custom = h("input", { value: known ? "" : value, placeholder: '"My Font", monospace', hidden: known, "aria-label": t("font_custom") });
+  sel.onchange = () => { custom.hidden = sel.value !== ""; if (!custom.hidden) custom.focus(); };
+  const el = h("div.font-picker", {}, sel, custom);
+  el.read = () => sel.value || custom.value.trim() || list[0][1];
+  return el;
+}
+
 function applyAppearance() {
   const a = S.settings.appearance;
-  const th = resolveTheme(a.theme, S.settings.themes);
+  const th = { ...resolveTheme(a.theme, S.settings.themes), ...userColors(a) };
   applyTheme(th);
   const r = document.documentElement.style;
-  if (/^#[0-9a-f]{6}$/i.test(a.accent)) r.setProperty("--accent", a.accent);
   document.body.dataset.density = a.density;
   r.setProperty("--ui-font", a.ui_font);
   r.setProperty("--ui-size", a.ui_font_size + "px");
@@ -165,16 +175,14 @@ async function openSettings(section = "general") {
   const f = {
     language: sel(s.appearance.language, [["auto", t("lang_auto")], ...Object.entries(LANGS)]),
     theme: sel(s.appearance.theme, Object.entries(allThemes).map(([k, th]) => [k, th.label || k])),
-    ui_font: h("input", { value: s.appearance.ui_font }),
+    ui_font: fontPicker(s.appearance.ui_font, UI_FONTS),
     ui_font_size: num(s.appearance.ui_font_size, 10, 24),
-    accent_on: h("input.switch", { type: "checkbox", checked: !!s.appearance.accent, role: "switch", "aria-label": t("accent_custom") }),
-    accent: h("input.color", { type: "color", "aria-label": t("accent_custom"), value: s.appearance.accent || resolveTheme(s.appearance.theme, s.themes).accent || "#C3BAFE" }),
     density: sel(s.appearance.density, [["comfortable", t("density_comfortable")], ["compact", t("density_compact")]]),
     font_weight: sel(s.terminal.font_weight, [["normal", t("fw_normal")], ["500", t("fw_medium")], ["bold", t("fw_bold")]]),
     letter_spacing: num(s.terminal.letter_spacing, -2, 4, 0.5),
     padding: num(s.terminal.padding, 0, 40, 2),
     bold_is_bright: sw(s.terminal.bold_is_bright),
-    font_family: h("input", { value: s.terminal.font_family }),
+    font_family: fontPicker(s.terminal.font_family, TERM_FONTS),
     font_size: num(s.terminal.font_size, 8, 40),
     line_height: num(s.terminal.line_height, 1, 2, 0.05),
     cursor_style: sel(s.terminal.cursor_style, [["block", t("cur_block")], ["bar", t("cur_bar")], ["underline", t("cur_under")]]),
@@ -222,6 +230,14 @@ async function openSettings(section = "general") {
       h("button.btn.ghost.small", { type: "button", onclick: () => { kb[action] = S.defaults[action]; btn.textContent = prettyAccel(kb[action]); } }, t("default")));
   });
 
+  const custom = userColors(s.appearance), base = resolveTheme(s.appearance.theme, s.themes);
+  const colors = COLOR_KEYS.map((k) => {
+    const label = t("c_" + k);
+    const on = h("input.switch", { type: "checkbox", checked: k in custom, role: "switch", "aria-label": label });
+    const pick = h("input.color", { type: "color", "aria-label": label, value: custom[k] || base[k] || (k === "term_bg" ? base.bg : k === "term_fg" ? base.ink : "#888888") });
+    pick.oninput = () => { on.checked = true; };
+    return { k, on, pick, el: h("div.toggle", {}, h("span", {}, label), h("div.inline", {}, pick, on)) };
+  });
   const row = (label, input, hint) => h("label.toggle", {}, h("span", {}, label, hint && h("small", {}, hint)), input);
   const pages = {
     general: [t("set_general"), h("div.form-grid", {}, field(t("language"), f.language), field(t("channel"), f.update_channel)),
@@ -233,7 +249,7 @@ async function openSettings(section = "general") {
       h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => checkUpdate(true, f.update_channel.value) }, t("check_now")))],
     appearance: [t("set_appearance"), h("div.form-grid", {}, field(t("theme"), f.theme), field(t("density"), f.density),
       h("div.span2", {}, field(t("ui_font"), f.ui_font)), field(t("size"), f.ui_font_size)),
-      h("div.toggles", {}, h("div.toggle", {}, h("span", {}, t("accent_custom"), h("small", {}, t("accent_hint"))), h("div.inline", {}, f.accent, f.accent_on)))],
+      h("h4", {}, t("colors"), h("small.mute", {}, " — ", t("colors_hint"))), h("div.toggles", {}, ...colors.map((c) => c.el))],
     terminal: [t("set_terminal"), h("div.form-grid", {},
       h("div.span2", {}, field(t("term_font"), f.font_family)),
       field(t("size"), f.font_size), field(t("line_height"), f.line_height),
@@ -268,8 +284,8 @@ async function openSettings(section = "general") {
   if (!ok) return;
 
   const n = (el, d) => (el.value !== "" && Number.isFinite(+el.value) ? +el.value : d);
-  Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.value, ui_font_size: n(f.ui_font_size, 13), accent: f.accent_on.checked ? f.accent.value : "", density: f.density.value });
-  Object.assign(s.terminal, { font_family: f.font_family.value, font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked });
+  Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.read(), ui_font_size: n(f.ui_font_size, 13), accent: "", colors: Object.fromEntries(colors.filter((c) => c.on.checked).map((c) => [c.k, c.pick.value])), density: f.density.value });
+  Object.assign(s.terminal, { font_family: f.font_family.read(), font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked });
   Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
   Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30) });
   s.keybindings = kb;

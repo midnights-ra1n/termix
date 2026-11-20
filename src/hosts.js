@@ -3,6 +3,7 @@ import { Menu } from "@tauri-apps/api/menu";
 import { open as openDialog, save as saveDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { S, h, icon, invoke, modal, field, uid, toast, saveHosts, statusDot, HOST_ICONS } from "./ui.js";
 import { t } from "./i18n.js";
+import { wantsTmux } from "./panes.js";
 
 let query = "";
 let activeTag = null;
@@ -137,6 +138,9 @@ function hostRow(x, depth) {
 async function hostMenu(x) {
   const m = await Menu.new({ items: [
     { id: "o", text: t("connect_tab"), action: () => onOpen(x, true) },
+    // The other way than usual, for this connection only.
+    wantsTmux(x) ? { id: "nt", text: t("connect_no_tmux"), action: () => onOpen(x, { tmux: false }) }
+      : { id: "wt", text: t("connect_tmux"), action: () => onOpen(x, { tmux: true }) },
     { id: "e", text: t("edit"), action: () => editHost(x) },
     { id: "d", text: t("duplicate"), action: async () => { S.hosts.hosts.push({ ...structuredClone(x), id: uid(), name: `${x.name} ${t("copy_suffix")}` }); await saveHosts(); } },
     { id: "f", text: x.favorite ? t("rm_fav") : t("add_fav"), action: async () => { x.favorite = !x.favorite; await saveHosts(); } },
@@ -195,7 +199,7 @@ export async function editFolder(f, parent = null) {
 
 export async function editHost(x = null, folder = null) {
   const isNew = !x;
-  x = x ? structuredClone(x) : { id: uid(), name: "", host: "", port: 22, user: "", key_path: "", description: "", icon: "server", tags: [], folder, favorite: false };
+  x = x ? structuredClone(x) : { id: uid(), name: "", host: "", port: 22, user: "", key_path: "", description: "", icon: "server", tags: [], folder, favorite: false, tmux: "" };
   const hasPw = !isNew && (await invoke("has_secret", { id: x.id }).catch(() => false));
   const vaultKeys = await invoke("sync_keys").catch(() => []);
   const inp = (k, attrs = {}) => h("input", { value: x[k] ?? "", ...attrs });
@@ -211,6 +215,8 @@ export async function editHost(x = null, folder = null) {
     tags: h("input", { value: x.tags.join(", "), placeholder: "prod, web" }),
     favorite: h("input", { type: "checkbox", checked: x.favorite, className: "switch" }),
     folder: h("select", {}, ...folderOptions(x.folder)),
+    tmux: h("select", {}, ...[["", t(S.settings.terminal.tmux ? "tmux_host_default_on" : "tmux_host_default_off")], ["on", t("tmux_host_on")], ["off", t("tmux_host_off")]]
+      .map(([v, l]) => h("option", { value: v, selected: v === (x.tmux || "") }, l))),
     key_id: h("select", {}, h("option", { value: "" }, t("f_vault_key_none")),
       ...vaultKeys.map((k) => h("option", { value: k.id, selected: k.id === x.key_id }, k.name || k.id))),
   };
@@ -236,6 +242,7 @@ export async function editHost(x = null, folder = null) {
     field(t("f_password"), f.password, t("f_password_hint")), field(t("f_passphrase"), f.passphrase),
     h("div.span2", {}, field(t("f_desc"), f.description)),
     field(t("f_tags"), f.tags, t("f_tags_hint")), field(t("f_folder"), f.folder),
+    h("div.span2", {}, field(t("tmux_setting"), f.tmux, t("tmux_host_hint"))),
     h("div.span2", {}, field(t("f_icon"), icons)),
     h("label.toggle.span2", {}, h("span", {}, t("f_fav")), f.favorite),
     h("footer.span2", {}, h("button.btn", { type: "button", onclick: () => close(false) }, t("cancel")), h("button.btn.primary", { type: "submit" }, t("save")))), { wide: true });
@@ -246,7 +253,7 @@ export async function editHost(x = null, folder = null) {
   Object.assign(x, {
     name: f.name.value.trim() || f.host.value.trim(), host: f.host.value.trim(), port, user: f.user.value.trim(),
     key_path: f.key_path.value.trim(), key_id: f.key_id.value, description: f.description.value, icon: chosenIcon,
-    tags: f.tags.value.split(",").map((s) => s.trim()).filter(Boolean), folder: f.folder.value || null, favorite: f.favorite.checked,
+    tags: f.tags.value.split(",").map((s) => s.trim()).filter(Boolean), folder: f.folder.value || null, favorite: f.favorite.checked, tmux: f.tmux.value,
   });
   try {
     if (f.password.value) await invoke("set_secret", { id: x.id, value: f.password.value });

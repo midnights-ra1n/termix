@@ -10,13 +10,13 @@ const ansi = (s) => {
 export const THEMES = {
   termix: {
     label: "Termix", dark: true,
-    bg: "#36415A", scene: "#3E4A64", vide: "#2B3448", indigo: "#46546F", brume: "#55647F",
+    bg: "#252C3D", scene: "#2B3346", vide: "#1E2433", indigo: "#363F55", brume: "#48536C",
     ink: "#EEEEEE", mute: "#CDD3DD", faint: "#B3BBC8",
     accent: "#5D866C", accent2: "#9CCBA9", success: "#9CCBA9", error: "#F0A0A0", warn: "#EBC48A", onAccent: "#FFFFFF",
     // The accent is too dark against the background for a focus ring (3:1): use its light tint.
     focus: "#9CCBA9",
-    cursor: "#9CCBA9", selection: "#55647F",
-    ...ansi("#2B3448 #F0A0A0 #9CCBA9 #EBC48A #9DC0EC #C9AEE6 #8FD0CF #CDD3DD #8693AA #F5B5B5 #B5DBC0 #F2D5A6 #B6D0F2 #D9C4EE #ACDEDD #F5F5F5"),
+    cursor: "#9CCBA9", selection: "#48536C",
+    ...ansi("#1E2433 #F0A0A0 #9CCBA9 #EBC48A #9DC0EC #C9AEE6 #8FD0CF #CDD3DD #8693AA #F5B5B5 #B5DBC0 #F2D5A6 #B6D0F2 #D9C4EE #ACDEDD #F5F5F5"),
   },
   midnights: {
     label: "Midnights (nuit)", dark: true,
@@ -130,6 +130,70 @@ export const THEMES = {
     cursor: "#0969DA", selection: "#B6E3FF",
     ...ansi("#24292F #CF222E #116329 #4D2D00 #0969DA #8250DF #1B7C83 #6E7781 #57606A #A40E26 #1A7F37 #633C01 #218BFF #A475F9 #3192AA #8C959F"),
   },
+  monokai: {
+    label: "Monokai", dark: true,
+    bg: "#272822", scene: "#2E2F29", vide: "#1E1F1C", indigo: "#3B3C35", brume: "#49483E",
+    ink: "#F8F8F2", mute: "#CFCFC2", faint: "#A6A68F",
+    accent: "#A6E22E", accent2: "#F92672", success: "#A6E22E", error: "#F92672", warn: "#FD971F", onAccent: "#272822",
+    cursor: "#F8F8F0", selection: "#49483E",
+    ...ansi("#272822 #F92672 #A6E22E #F4BF75 #66D9EF #AE81FF #A1EFE4 #F8F8F2 #75715E #F92672 #A6E22E #F4BF75 #66D9EF #AE81FF #A1EFE4 #F9F8F5"),
+  },
+  ayu: {
+    label: "Ayu Dark", dark: true,
+    bg: "#0B0E14", scene: "#0F131A", vide: "#07090D", indigo: "#1A1F29", brume: "#273040",
+    ink: "#BFBDB6", mute: "#ACB6BF", faint: "#8A919A",
+    accent: "#E6B450", accent2: "#FFB454", success: "#AAD94C", error: "#F07178", warn: "#FF8F40", onAccent: "#0B0E14",
+    cursor: "#E6B450", selection: "#273040",
+    ...ansi("#01060E #EA6C73 #7FD962 #F9AF4F #53BDFA #CDA1FA #90E1C6 #C7C7C7 #686868 #F07178 #AAD94C #FFB454 #59C2FF #D2A6FF #95E6CB #FFFFFF"),
+  },
+  nightowl: {
+    label: "Night Owl", dark: true,
+    bg: "#011627", scene: "#0B2942", vide: "#01111D", indigo: "#122D42", brume: "#1D3B53",
+    ink: "#D6DEEB", mute: "#B2C2D8", faint: "#8BA0B8",
+    accent: "#82AAFF", accent2: "#C792EA", success: "#22DA6E", error: "#EF5350", warn: "#FFEB95", onAccent: "#011627",
+    cursor: "#80A4C2", selection: "#1D3B53",
+    ...ansi("#011627 #EF5350 #22DA6E #ADDB67 #82AAFF #C792EA #21C7A8 #FFFFFF #637777 #EF5350 #22DA6E #FFEB95 #82AAFF #C792EA #7FDBCA #FFFFFF"),
+  },
+  tomorrow: {
+    label: "Tomorrow Night", dark: true,
+    bg: "#1D1F21", scene: "#25282A", vide: "#161719", indigo: "#2E3133", brume: "#373B41",
+    ink: "#C5C8C6", mute: "#B4B7B4", faint: "#969896",
+    accent: "#81A2BE", accent2: "#B294BB", success: "#B5BD68", error: "#CC6666", warn: "#F0C674", onAccent: "#1D1F21",
+    cursor: "#C5C8C6", selection: "#373B41",
+    ...ansi("#1D1F21 #CC6666 #B5BD68 #F0C674 #81A2BE #B294BB #8ABEB7 #C5C8C6 #969896 #CC6666 #B5BD68 #F0C674 #81A2BE #B294BB #8ABEB7 #FFFFFF"),
+  },
+  palenight: {
+    label: "Material Palenight", dark: true,
+    bg: "#292D3E", scene: "#202331", vide: "#1B1E2B", indigo: "#34324A", brume: "#444267",
+    ink: "#D0D3E8", mute: "#A6ACCD", faint: "#8F95BC",
+    accent: "#C792EA", accent2: "#82AAFF", success: "#C3E88D", error: "#F07178", warn: "#FFCB6B", onAccent: "#292D3E",
+    cursor: "#FFCC00", selection: "#444267",
+    ...ansi("#292D3E #F07178 #C3E88D #FFCB6B #82AAFF #C792EA #89DDFF #D0D0D0 #676E95 #FF8B92 #DDFFA7 #FFE585 #9CC4FF #E1ACFF #A3F7FF #FFFFFF"),
+  },
+  poimandres: {
+    label: "Poimandres", dark: true,
+    bg: "#1B1E28", scene: "#171922", vide: "#13151C", indigo: "#252B37", brume: "#303340",
+    ink: "#E4F0FB", mute: "#A6ACCD", faint: "#8E94B8",
+    accent: "#5DE4C7", accent2: "#FCC5E9", success: "#5DE4C7", error: "#D0679D", warn: "#FFFAC2", onAccent: "#1B1E28",
+    cursor: "#A6ACCD", selection: "#303340",
+    ...ansi("#1B1E28 #D0679D #5DE4C7 #FFFAC2 #89DDFF #FCC5E9 #ADD7FF #FFFFFF #767C9D #D0679D #5DE4C7 #FFFAC2 #ADD7FF #FAE4FC #89DDFF #FFFFFF"),
+  },
+  solarizedlight: {
+    label: "Solarized Light", dark: false,
+    bg: "#FDF6E3", scene: "#F5EFDC", vide: "#EEE8D5", indigo: "#EEE8D5", brume: "#DDD6C1",
+    ink: "#073642", mute: "#3E545C", faint: "#586E75",
+    accent: "#1F6FA8", accent2: "#B02A6C", success: "#5F6E00", error: "#B8231F", warn: "#7D5E00", onAccent: "#FDF6E3",
+    cursor: "#586E75", selection: "#EEE8D5",
+    ...ansi("#073642 #DC322F #859900 #B58900 #268BD2 #D33682 #2AA198 #EEE8D5 #002B36 #CB4B16 #586E75 #657B83 #839496 #6C71C4 #93A1A1 #FDF6E3"),
+  },
+  gruvboxlight: {
+    label: "Gruvbox Light", dark: false,
+    bg: "#FBF1C7", scene: "#F2E5BC", vide: "#EBDBB2", indigo: "#EBDBB2", brume: "#D5C4A1",
+    ink: "#3C3836", mute: "#504945", faint: "#665C54",
+    accent: "#076678", accent2: "#8F3F71", success: "#79740E", error: "#9D0006", warn: "#AF3A03", onAccent: "#FBF1C7",
+    cursor: "#3C3836", selection: "#D5C4A1",
+    ...ansi("#FBF1C7 #CC241D #98971A #D79921 #458588 #B16286 #689D6A #7C6F64 #928374 #9D0006 #79740E #B57614 #076678 #8F3F71 #427B58 #3C3836"),
+  },
   // Follows the OS: system colours, accent colour and light/dark mode.
   system: { label: "Système (natif)", system: true },
 };
@@ -161,11 +225,12 @@ export function applyTheme(t) {
     if (t[k]) r.setProperty(`--${k}`, t[k]);
   }
   r.setProperty("--focus", t.focus || t.accent);
+  r.setProperty("--term-bg", t.term_bg || t.bg);
   document.documentElement.dataset.dark = t.dark === false ? "0" : "1";
 }
 
 export function xtermTheme(t) {
-  const { bg, ink, cursor, selection } = t;
+  const { term_bg: bg = t.bg, term_fg: ink = t.ink, cursor, selection } = t;
   const keys = Object.keys(ansi("a b c d e f g h i j k l m n o p"));
   return {
     background: bg, foreground: ink, cursor, cursorAccent: bg, selectionBackground: selection,

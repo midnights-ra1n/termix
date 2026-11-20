@@ -455,13 +455,16 @@ pub fn valid_tmux_name(name: &str) -> bool {
 }
 
 /// Attach the session, creating it if needed (mouse on so the wheel scrolls tmux history, status bar off so it
-/// looks like a plain shell);
-/// without tmux on the server, a plain login shell.
+/// looks like a plain shell); without tmux on the server, a plain login shell.
+/// An exec channel gets no MOTD from sshd, so a new session prints it itself. tmux < 3.5 defaults to TERM=screen,
+/// which shells' prompts and `ls` treat as colourless: upgrade it to screen-256color unless the user chose one.
 pub fn tmux_cmd(name: &str) -> Result<String> {
     if !valid_tmux_name(name) {
         bail!("nom de session tmux invalide : {name}");
     }
-    Ok(format!(r#"sh -c 'command -v tmux >/dev/null 2>&1 && exec tmux new-session -A -s {name} \; set-option mouse on \; set-option status off; exec "${{SHELL:-sh}}" -l'"#))
+    Ok(format!(
+        r##"sh -c 'export COLORTERM=truecolor; M="cat /run/motd.dynamic /etc/motd 2>/dev/null"; command -v tmux >/dev/null 2>&1 && exec tmux if -F "#{{==:#{{default-terminal}},screen}}" "set -g default-terminal screen-256color" \; new-session -A -s {name} "$M; exec \"\$SHELL\" -l" \; set-option mouse on \; set-option status off; eval "$M"; exec "${{SHELL:-sh}}" -l'"##
+    ))
 }
 
 pub const TMUX_LS_CMD: &str = r##"sh -c 'command -v tmux >/dev/null 2>&1 || { echo NOTMUX; exit 0; }; tmux ls -F "#{session_name}|#{session_windows}|#{session_attached}|#{session_activity}|#{pane_current_command}" 2>/dev/null; true'"##;
@@ -552,6 +555,7 @@ mod integration_tests {
     #[test]
     fn tmux_names_are_checked_before_reaching_the_shell() {
         assert!(tmux_cmd("rt-a1b2_C").unwrap().contains("new-session -A -s rt-a1b2_C"));
+        assert!(tmux_cmd("x").unwrap().contains("/etc/motd"), "exec channels get no MOTD from sshd");
         for bad in ["", "a b", "x';rm -rf ~'", "a;b", "$(id)"] {
             assert!(tmux_cmd(bad).is_err(), "{bad}");
         }

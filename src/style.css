@@ -2,7 +2,7 @@
 
 /* Tokens are set by themes.js; these are the Termix fallbacks. */
 :root {
-  --bg: #36415A; --scene: #3E4A64; --vide: #2B3448; --indigo: #46546F; --brume: #55647F;
+  --bg: #252C3D; --scene: #2B3346; --vide: #1E2433; --indigo: #363F55; --brume: #48536C;
   --ink: #EEEEEE; --mute: #CDD3DD; --faint: #B3BBC8;
   --accent: #5D866C; --accent2: #9CCBA9; --success: #9CCBA9; --error: #F0A0A0; --warn: #EBC48A; --onAccent: #FFFFFF; --focus: #9CCBA9;
   --st-up: #4ADE80; --st-ping: #FACC15; --st-down: #F87171;
@@ -109,7 +109,7 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 .split.h > .gutter { width: 8px; cursor: col-resize; }
 .split.v > .gutter { height: 8px; cursor: row-resize; }
 .gutter:hover { background: var(--brume); border-radius: 9999px; }
-.pane { flex: 1; display: flex; min-width: 0; min-height: 0; border-radius: 12px; border: 1px solid transparent; overflow: hidden; background: var(--bg); }
+.pane { flex: 1; display: flex; min-width: 0; min-height: 0; border-radius: 12px; border: 1px solid transparent; overflow: hidden; background: var(--term-bg, var(--bg)); }
 .split .pane { border-color: var(--indigo); }
 .split .pane.focused { border-color: var(--brume); }
 .pane.drop { border-color: var(--accent) !important; }
@@ -123,6 +123,9 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 .suggest-list li b { color: var(--ink); font-weight: 600; }
 .suggest-list li.on { background: var(--brume); color: var(--ink); }
 .xterm .xterm-scrollable-element > .scrollbar.horizontal { display: none !important; }
+/* xterm.css gives the viewport a black background and native scrolling: it showed as a black bar under the terminal. */
+.xterm .xterm-viewport { overflow: hidden !important; background: transparent !important; }
+.font-picker { display: flex; flex-direction: column; gap: 6px; }
 .picker { margin: auto; width: min(400px, 90%); display: flex; flex-direction: column; gap: 12px; }
 .picker h3 { margin: 0; font: 500 14px var(--ui-font); }
 .picker input { height: var(--ctl); padding: 0 12px; border-radius: 10px; border: 1px solid var(--brume); background: var(--scene); }

@@ -29,17 +29,17 @@ Rust (Tauri v2, russh) and xterm.js. No telemetry, no account required.</p>
 - **Hosts**: folders and subfolders with drag and drop, tags, search, favorites, built-in icons, live status (SSH, ping only, down), JSON import and export
 - **Authentication**: SSH agent (Bitwarden, 1Password, KeePassXC, Proton Pass, Secretive… found through `~/.ssh/config` and your shell), key files, passwords in the system keychain
 - **Terminal**: tabs, splits right, left, down and up, keyboard shortcuts per platform, command suggestions, copy on select, zoom
-- **Persistent sessions**: shells run inside tmux when the server has it, so jobs keep running after you disconnect and you resume them from the side panel
+- **Persistent sessions** (optional): shells can run inside tmux when the server has it, so jobs keep running after you disconnect and you resume them from the side panel
 - **Side panel**: server stats (CPU, memory, disk, network, load average), SFTP browser, Docker containers and their state, tmux sessions
 - **Sync**: hosts, folders, settings, passwords, SSH keys and open tabs between your devices, through a self-hosted server or directly on the local network. Passwords and keys are end-to-end encrypted
-- **Customization**: 16 built-in themes plus your own, interface and terminal fonts, accent color, density, cursor, padding, letter spacing, everything from the GUI or a TOML file
+- **Customization**: 24 built-in themes plus your own, 11 bundled fonts (5 sans for the interface, 6 mono for the terminal) or any installed one, accent color, density, cursor, padding, letter spacing, everything from the GUI or a TOML file
 - **Desktop integration**: native macOS menu bar, native tray menu on macOS, GNOME, KDE and Windows with your hosts one click away, optional background mode for instant reopening, native Wayland
 - **Updates**: automatic and manual, from GitHub releases, on the stable, beta or nightly channel
 - **Languages**: English, French, Spanish, German
 
 ## Install
 
-Download the build for your system from the [releases page](https://github.com/midnights-ra1n/RustTerm/releases).
+Download the build for your system from the [releases page](https://github.com/midnights-ra1n/termix/releases).
 
 | System | Files | Architectures |
 |---|---|---|
@@ -94,7 +94,7 @@ You can also import a private key file (it is copied to Termix's `keys/` folder 
 
 Every shortcut can be changed in Settings → Shortcuts. Linux and Windows use Ctrl+Shift so that Ctrl+letter still reaches the remote shell. Letters follow your keyboard layout (AZERTY, QWERTZ…).
 
-**tmux**: when the server has tmux, each pane runs in its own tmux session (`tx-…`) with mouse support and no status bar. Closing the tab or losing the network leaves it running. The tmux tab of the side panel lists the sessions of the server, resumes one in a new tab, or ends it. Turn this off in Settings → Terminal. Hold ⌥ (macOS) or Shift to select text while tmux has the mouse.
+**tmux**: when enabled and the server has tmux, each pane runs in its own tmux session (`tx-…`) with mouse support and no status bar. Closing the tab or losing the network leaves it running. The tmux tab of the side panel lists the sessions of the server, resumes one in a new tab, or ends it. It is off by default: turn it on for every host in Settings → Terminal, per host in the host editor (general setting / always / never), or for a single connection from the host's right-click menu (**Connect in tmux** / **Connect without tmux**). Hold ⌥ (macOS) or Shift to select text while tmux has the mouse.
 
 ## Side panel
 

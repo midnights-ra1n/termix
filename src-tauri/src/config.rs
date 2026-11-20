@@ -6,12 +6,13 @@ use std::path::PathBuf;
 const UI_FONT: &str = "\"IBM Plex Sans\", system-ui, sans-serif";
 const TERM_FONT: &str = "\"IBM Plex Mono\", Menlo, Consolas, monospace";
 
-/// Geist is no longer bundled: settings still on its former defaults move to IBM Plex.
+/// Settings still on the former Geist defaults (fonts that were not bundled) move to IBM Plex.
 pub fn migrate_fonts(s: &mut Settings) {
-    if s.appearance.ui_font.starts_with("Geist") {
+    // Exact former defaults only: Geist Sans / Geist Mono are bundled again and can be picked.
+    if s.appearance.ui_font == "Geist, system-ui, sans-serif" {
         s.appearance.ui_font = UI_FONT.into();
     }
-    if s.terminal.font_family.starts_with("\"Geist Mono\"") {
+    if s.terminal.font_family == "\"Geist Mono\", \"JetBrains Mono\", Menlo, Consolas, monospace" {
         s.terminal.font_family = TERM_FONT.into();
     }
 }
@@ -81,8 +82,10 @@ pub struct Appearance {
     pub ui_font_size: u32,
     pub sidebar: bool,
     pub right_panel: bool,
-    /// Overrides the theme accent (#RRGGBB), empty = theme accent.
+    /// Overrides the theme accent (#RRGGBB), empty = theme accent. Superseded by `colors.accent`.
     pub accent: String,
+    /// Overrides any theme key (accent, bg, scene, ink, term_bg, term_fg, cursor, selection…) with "#RRGGBB".
+    pub colors: BTreeMap<String, String>,
     /// comfortable | compact
     pub density: String,
 }
@@ -147,7 +150,7 @@ impl Default for Settings {
 }
 impl Default for Appearance {
     fn default() -> Self {
-        Self { language: "auto".into(), theme: "termix".into(), ui_font: UI_FONT.into(), ui_font_size: 13, sidebar: true, right_panel: true, accent: String::new(), density: "comfortable".into() }
+        Self { language: "auto".into(), theme: "termix".into(), ui_font: UI_FONT.into(), ui_font_size: 13, sidebar: true, right_panel: true, accent: String::new(), colors: BTreeMap::new(), density: "comfortable".into() }
     }
 }
 impl Default for Terminal {
@@ -161,7 +164,7 @@ impl Default for Terminal {
             scrollback: 10000,
             copy_on_select: false,
             suggestions: true,
-            tmux: true,
+            tmux: false,
             font_weight: "normal".into(),
             letter_spacing: 0.0,
             padding: 8,
@@ -263,6 +266,8 @@ pub struct Host {
     pub tags: Vec<String>,
     pub folder: Option<String>,
     pub favorite: bool,
+    /// tmux for this host: "" = the global setting, "on" = always, "off" = never.
+    pub tmux: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

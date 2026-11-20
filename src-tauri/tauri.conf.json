@@ -21,7 +21,7 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "visible": false,
-        "backgroundColor": "#36415A",
+        "backgroundColor": "#252C3D",
         "dragDropEnabled": false,
         "trafficLightPosition": {
           "x": 18,
@@ -68,7 +68,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJEOEM0ODlGMEUxNjhBQTMKUldTamloWU9uMGlNdlgyWGJVeHBwd2IwYUdHdkd1R0JmMlVBSDA0ckl2YlA0OXpYQ3NWdVpXWSsK",
       "endpoints": [
-        "https://github.com/midnights-ra1n/RustTerm/releases/latest/download/latest.json"
+        "https://github.com/midnights-ra1n/termix/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

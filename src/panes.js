@@ -55,7 +55,7 @@ class Pane {
   async connect(host, password = null) {
     this.host = host;
     // Kept across reconnects (Enter after a drop) so the same tmux session is reattached.
-    if (this.tmux === undefined) this.tmux = S.settings.terminal.tmux ? "tx-" + crypto.randomUUID().slice(0, 8) : null;
+    if (this.tmux === undefined) this.tmux = wantsTmux(host) ? tmuxName() : null;
     this.el.replaceChildren(h("div.connecting", { role: "status" }, h("span.dot"), tr("connecting", host.name)));
     const term = new Terminal({
       ...termOptions(), allowProposedApi: true, macOptionIsMeta: true, rightClickSelectsWord: true,
@@ -79,6 +79,8 @@ class Pane {
     const box = h("div.term");
     this.el.replaceChildren(box);
     term.open(box);
+    // Shells and tmux send DECRST 12 (terminfo cnorm), which would stop the blink for good: the setting wins.
+    for (const final of ["h", "l"]) term.parser.registerCsiHandler({ prefix: "?", final }, (p) => p.length === 1 && p[0] === 12);
     term.onData((d) => invoke("ssh_write", { id: this.session, data: d }).catch(() => {}));
     term.onResize(({ cols, rows }) => invoke("ssh_resize", { id: this.session, cols, rows }).catch(() => {}));
     term.onSelectionChange(() => S.settings.terminal.copy_on_select && term.hasSelection() && navigator.clipboard.writeText(term.getSelection()));
@@ -279,11 +281,16 @@ export function focusPane(p) {
 
 export const focused = () => current?.focused || null;
 
-/** Open a host: in the focused pane if it's empty, else a new tab. */
-export function openHost(host) {
+/** The host's own tmux choice, else the global setting. */
+export const wantsTmux = (host) => host.tmux === "on" || (host.tmux !== "off" && S.settings.terminal.tmux);
+const tmuxName = () => "tx-" + crypto.randomUUID().slice(0, 8);
+
+/** Open a host: in the focused pane if it's empty, else a new tab. `opts.tmux` (bool) overrides the host's choice once. */
+export function openHost(host, opts) {
+  const tmux = typeof opts?.tmux === "boolean" ? (opts.tmux ? tmuxName() : null) : undefined;
   const p = focused();
-  if (p && !p.session && !p.term) return p.connect(host);
-  newTab(host);
+  if (p && !p.session && !p.term) { p.tmux = tmux; return p.connect(host); }
+  newTab(host, tmux);
 }
 
 /** Session to show in the side panel: focused pane first, else any live pane of the tab. */
@@ -357,11 +364,15 @@ function termOptions() {
 export function applyTerminalSettings(theme) {
   if (theme) xtheme = theme;
   document.documentElement.style.setProperty("--term-pad", S.settings.terminal.padding + "px");
-  for (const tab of tabs) for (const p of leaves(tab.root)) {
-    if (!p.term) continue;
-    Object.assign(p.term.options, termOptions());
-    p.refit();
-  }
+  // xterm measures the cell once per font change: wait until a bundled font is actually loaded.
+  const { font_family: ff, font_size: fs } = S.settings.terminal;
+  Promise.all([`${fs}px ${ff}`, `bold ${fs}px ${ff}`].map((f) => document.fonts.load(f))).catch(() => {}).then(() => {
+    for (const tab of tabs) for (const p of leaves(tab.root)) {
+      if (!p.term) continue;
+      Object.assign(p.term.options, termOptions());
+      p.refit();
+    }
+  });
 }
 
 listen("ssh-closed", (e) => bySession.get(e.payload)?.closed());
