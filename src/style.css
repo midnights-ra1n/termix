@@ -134,7 +134,8 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); animation: pulse 1.2s var(--ease) infinite alternate; }
 @keyframes pulse { to { opacity: .3; } }
 .welcome { margin: auto; text-align: center; color: var(--mute); display: grid; place-content: center; height: 100%; }
-.welcome h1 { font: 900 clamp(48px, 9vw, 120px)/.9 var(--ui-font); letter-spacing: -.05em; color: var(--ink); margin: 0 0 12px; }
+.welcome h1 { display: flex; align-items: center; justify-content: center; gap: .35em; font: 800 clamp(40px, 7vw, 88px)/1 var(--ui-font); letter-spacing: -.04em; color: var(--ink); margin: 0 0 16px; }
+.welcome h1 img { width: 1.15em; height: 1.15em; }
 .dot-end { color: var(--accent2); }
 
 /* ---------- right panel ---------- */

@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { S, h, icon, invoke, modal, field, toast, statusDot } from "./ui.js";
 import { t as tr } from "./i18n.js";
 import { Suggest } from "./suggest.js";
+import logo from "../assets/icon-rounded.svg";
 
 // Layout tree per tab: { split: "h"|"v", ratio, a, b } | Pane
 const tabs = [];
@@ -192,7 +193,7 @@ function render() {
 function updateTabTitles() { render(); }
 
 function welcome() {
-  const el = h("div.welcome", {}, h("h1", {}, "RUSTTERM", h("span.dot-end", {}, ".")), h("p", {}, tr("welcome")));
+  const el = h("div.welcome", {}, h("h1", {}, h("img", { src: logo, alt: "" }), "RustTerm"), h("p", {}, tr("welcome")));
   el.addEventListener("dragover", (e) => e.dataTransfer.types.includes("text/plain") && e.preventDefault());
   el.addEventListener("drop", (e) => {
     const [kind, id] = e.dataTransfer.getData("text/plain").split(":");
