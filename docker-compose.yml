@@ -1,0 +1,16 @@
+services:
+  rustterm:
+    image: ghcr.io/midnights-ra1n/rustterm:stable
+    build: .
+    ports:
+      - "5800:5800" # web UI (noVNC)
+    volumes:
+      - ./rustterm-config:/config
+      # Optional SSH agent of the Docker host:
+      # - ${SSH_AUTH_SOCK}:/ssh-agent
+    environment:
+      - USER_ID=1000
+      - GROUP_ID=1000
+      # - SSH_AUTH_SOCK=/ssh-agent
+      # - WEB_AUTHENTICATION=1   # login page; see the jlesage/baseimage-gui docs for users
+    restart: unless-stopped

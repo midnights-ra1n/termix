@@ -23,6 +23,21 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 Linux : `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`. L'icône tray sous GNOME nécessite l'extension AppIndicator.
 
+## Docker (accès navigateur)
+
+RustTerm tourne dans un bureau virtuel servi par noVNC : ouvrez `http://<serveur>:5800`.
+
+```sh
+docker compose up -d          # image ghcr.io/midnights-ra1n/rustterm:stable (amd64, arm64)
+docker compose up -d --build  # ou construire depuis les sources
+```
+
+- Réglages, hôtes et `known_hosts` sont dans le volume `/config`.
+- Agent SSH : montez le socket de l'hôte (`${SSH_AUTH_SOCK}:/ssh-agent`) et définissez `SSH_AUTH_SOCK=/ssh-agent` (voir `docker-compose.yml`). Le socket doit être lisible par `USER_ID`.
+- Pas de trousseau système dans le conteneur : les mots de passe ne sont pas mémorisés, utilisez l'agent ou une clé dans `/config`.
+- Exposé sur un réseau, activez `WEB_AUTHENTICATION` ou placez-le derrière un reverse proxy authentifié : la page donne accès à vos serveurs.
+- Les tags `stable`, `beta`, `nightly` suivent les branches ; mettez à jour avec `docker compose pull`.
+
 ## Branches et releases
 
 | Branche | Rôle | Release |

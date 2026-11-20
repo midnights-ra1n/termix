@@ -115,11 +115,11 @@ pub fn known_agents() -> Vec<(String, String)> {
         v.push(("ssh-agent (systemd)".into(), PathBuf::from(x).join("ssh-agent.socket")));
     }
     let mut out: Vec<(String, String)> =
-        v.into_iter().filter(|(_, p)| p.exists()).map(|(n, p)| (n, p.to_string_lossy().into())).collect();
-    if let Some(s) = ssh_config_agent() {
+        v.into_iter().map(|(n, p)| (n, p.to_string_lossy().into_owned())).filter(|(_, p)| alive(p)).collect();
+    if let Some(s) = ssh_config_agent().filter(|s| alive(s)) {
         out.insert(0, ("~/.ssh/config (IdentityAgent)".into(), s));
     }
-    if let Some(s) = shell_env_agent() {
+    if let Some(s) = shell_env_agent().filter(|s| alive(s)) {
         out.insert(0, ("Shell ($SSH_AUTH_SOCK)".into(), s));
     }
     if cfg!(windows) {
@@ -130,17 +130,30 @@ pub fn known_agents() -> Vec<(String, String)> {
 
 fn shell_env_agent() -> Option<String> {
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE.get_or_init(|| std::env::var("SSH_AUTH_SOCK").ok().filter(|s| !s.is_empty()).or_else(shell_agent)).clone()
+    // The login shell wins: on macOS launchd hands every GUI app an SSH_AUTH_SOCK for the (empty) system agent,
+    // which would shadow the agent exported in .zshrc/.bashrc/config.fish.
+    CACHE.get_or_init(|| shell_agent().or_else(|| std::env::var("SSH_AUTH_SOCK").ok().filter(|s| !s.is_empty()))).clone()
+}
+
+/// A socket file can outlive its agent (app quit or crashed): only keep ones that accept a connection.
+fn alive(sock: &str) -> bool {
+    #[cfg(unix)]
+    return std::os::unix::net::UnixStream::connect(sock).is_ok();
+    #[cfg(not(unix))]
+    return !sock.is_empty();
 }
 
 pub fn resolve_agent(configured: &str) -> Option<String> {
-    if !configured.trim().is_empty() {
-        return Some(expand(configured).to_string_lossy().into());
-    }
     if cfg!(windows) {
-        return Some(r"\\.\pipe\openssh-ssh-agent".into());
+        let s = configured.trim();
+        return Some(if s.is_empty() { r"\\.\pipe\openssh-ssh-agent".into() } else { s.into() });
     }
-    ssh_config_agent().or_else(shell_env_agent)
+    // A forced socket that is dead (stale file) falls back to auto-detection instead of a password prompt.
+    let forced = expand(configured).to_string_lossy().into_owned();
+    if !configured.trim().is_empty() && alive(&forced) {
+        return Some(forced);
+    }
+    ssh_config_agent().filter(|s| alive(s)).or_else(|| shell_env_agent().filter(|s| alive(s)))
 }
 
 async fn agent_try<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
@@ -461,5 +474,24 @@ mod history_tests {
     fn parses_all_shells() {
         let raw = "==> /root/.bash_history <==\nls -la\ngit status\n#1700000000\nls -la\n\n==> /root/.zsh_history <==\n: 1700000000:0;docker ps\n\n==> /root/.local/share/fish/fish_history <==\n- cmd: systemctl status nginx\n  when: 1700000000\n";
         assert_eq!(super::parse_history(raw), vec!["git status", "ls -la", "docker ps", "systemctl status nginx"]);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod agent_tests {
+    #[test]
+    fn stale_agent_socket_is_skipped() {
+        let dir = std::env::temp_dir().join(format!("rt-agent-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let p = dir.join("a.sock");
+        let _ = std::fs::remove_file(&p);
+        let l = std::os::unix::net::UnixListener::bind(&p).unwrap();
+        let s = p.to_string_lossy().into_owned();
+        assert!(super::alive(&s));
+        assert_eq!(super::resolve_agent(&s).as_deref(), Some(s.as_str()));
+        drop(l); // the file stays, like a quit agent's socket
+        assert!(!super::alive(&s));
+        assert_ne!(super::resolve_agent(&s).as_deref(), Some(s.as_str()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
