@@ -53,10 +53,10 @@ pub type Sessions = Mutex<HashMap<String, Arc<Session>>>;
 // ---------- agent discovery ----------
 
 fn expand(p: &str) -> PathBuf {
-    let p = p.trim().trim_matches('"');
-    match p.strip_prefix("~/") {
+    let raw = p.trim().trim_matches('"');
+    match ["~/", "$HOME/", "${HOME}/"].iter().find_map(|pre| raw.strip_prefix(pre)) {
         Some(rest) => dirs::home_dir().unwrap_or_default().join(rest),
-        None => PathBuf::from(p),
+        None => PathBuf::from(raw),
     }
 }
 
@@ -83,16 +83,23 @@ fn ssh_config_agent() -> Option<String> {
 fn shell_agent() -> Option<String> {
     #[cfg(unix)]
     {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-        let out = std::process::Command::new(shell)
-            .args(["-l", "-i", "-c", "echo __RT__$SSH_AUTH_SOCK"])
-            .stdin(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()?;
-        let s = String::from_utf8_lossy(&out.stdout);
-        let v = s.lines().find_map(|l| l.strip_prefix("__RT__"))?.trim().to_string();
-        (!v.is_empty()).then_some(v)
+        // $SHELL is the login shell, often bash even when the terminal runs zsh/fish: ask each installed shell,
+        // without the inherited SSH_AUTH_SOCK so only what the rc file exports counts.
+        let mut shells: Vec<String> = std::env::var("SHELL").ok().into_iter().collect();
+        shells.extend(["zsh", "bash", "fish"].map(String::from));
+        shells.dedup_by(|a, b| a.rsplit('/').next() == b.rsplit('/').next());
+        shells.into_iter().find_map(|sh| {
+            let out = std::process::Command::new(sh)
+                .args(["-l", "-i", "-c", "echo __RT__$SSH_AUTH_SOCK"])
+                .env_remove("SSH_AUTH_SOCK")
+                .stdin(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .output()
+                .ok()?;
+            let s = String::from_utf8_lossy(&out.stdout);
+            let v = s.lines().find_map(|l| l.strip_prefix("__RT__"))?.trim().to_string();
+            (!v.is_empty() && alive(&v)).then_some(v)
+        })
     }
     #[cfg(not(unix))]
     None
@@ -107,6 +114,7 @@ pub fn known_agents() -> Vec<(String, String)> {
         ("Bitwarden".into(), h.join(".bitwarden-ssh-agent.sock")),
         ("Bitwarden".into(), h.join("Library/Containers/com.bitwarden.desktop/Data/.bitwarden-ssh-agent.sock")),
         ("Bitwarden (Flatpak)".into(), h.join(".var/app/com.bitwarden.desktop/data/.bitwarden-ssh-agent.sock")),
+        ("Lightwarden".into(), h.join(".lightwarden-ssh-agent.sock")),
         ("Proton Pass".into(), h.join(".ssh/proton-pass-agent.sock")),
         ("Secretive".into(), h.join("Library/Containers/com.maxgoedjen.Secretive.SecretAgent/Data/socket.ssh")),
     ];
@@ -636,5 +644,13 @@ mod agent_tests {
         assert!(!super::alive(&s));
         assert_ne!(super::resolve_agent(&s).as_deref(), Some(s.as_str()));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn home_is_expanded() {
+        let h = dirs::home_dir().unwrap().join("a.sock");
+        for p in ["~/a.sock", "$HOME/a.sock", "${HOME}/a.sock", "\"${HOME}/a.sock\""] {
+            assert_eq!(super::expand(p), h, "{p}");
+        }
     }
 }

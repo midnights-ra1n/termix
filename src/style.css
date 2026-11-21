@@ -57,7 +57,7 @@ body.no-sidebar #add-folder, body.no-sidebar #add-host, body.no-panel #panel-tab
 body.menubar #app { grid-template-rows: var(--mb) var(--bar) minmax(0, 1fr); }
 :root { --mb: 32px; --win-r: 12px; --win-m: 12px; --win-shadow: 0 3px 9px 1px rgba(0, 0, 0, .35), 0 0 0 1px rgba(0, 0, 0, .23); } /* GNOME / libadwaita */
 :root[data-desktop*="KDE"] { --win-r: 8px; --win-m: 24px; --win-shadow: 0 6px 24px rgba(0, 0, 0, .45), 0 0 0 1px rgba(0, 0, 0, .2); } /* Breeze */
-#menubar button { cursor: default; transition: background-color .18s ease, color .18s ease; }
+#menubar button { cursor: default; transition: background-color .08s ease, color .08s ease; }
 #menubar { grid-column: 1 / -1; position: relative; z-index: 11; display: flex; align-items: center; height: var(--mb); background: var(--scene); border-bottom: 1px solid var(--indigo); }
 /* Resize edges (menubar.js): from the window edge across the shadow margin to a few px inside the visible frame. */
 .rz { --g: calc(var(--win-m, 0px) + 5px); position: fixed; z-index: 10000; }
@@ -74,7 +74,7 @@ body.maximized .rz { display: none; }
 .mb-title { height: 24px; padding: 0 9px; border: 0; border-radius: 6px; background-color: transparent; color: var(--mute); font-size: 12.5px; }
 .mb-title:hover, .mb-title.on { background: var(--indigo); color: var(--ink); }
 .mb-drop { position: absolute; top: calc(var(--mb) - 3px); min-width: 250px; max-height: calc(100vh - var(--mb) - 12px); overflow: auto; padding: 5px; display: flex; flex-direction: column;
-  background: var(--scene); border: 1px solid var(--brume); border-radius: 10px; box-shadow: 0 20px 40px -18px rgba(0, 0, 0, .6); animation: fade .12s var(--ease); }
+  background: var(--scene); border: 1px solid var(--brume); border-radius: 10px; box-shadow: 0 20px 40px -18px rgba(0, 0, 0, .6); animation: fade .08s var(--ease); }
 .mb-item { display: flex; align-items: center; justify-content: space-between; gap: 28px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background-color: transparent; text-align: left; white-space: nowrap; }
 .mb-item:hover, .mb-item:focus-visible { background: var(--accent); color: var(--onAccent); outline: none; }
 .mb-key { color: var(--faint); font-size: 12px; }

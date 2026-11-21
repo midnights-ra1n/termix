@@ -323,8 +323,41 @@ async fn check_update(app: AppHandle, channel: String) -> R<Option<(String, Stri
 #[tauri::command]
 async fn install_update(app: AppHandle, channel: String) -> R<()> {
     let u = find_update(&app, &channel).await.map_err(e)?.ok_or("aucune mise à jour")?;
-    u.download_and_install(|_, _| {}, || {}).await.map_err(e)?;
+    let bytes = u.download(|_, _| {}, || {}).await.map_err(e)?;
+    #[cfg(target_os = "linux")]
+    if let Some(cmd) = linux_pkg_cmd() {
+        tokio::task::spawn_blocking(move || install_pkg(&bytes, cmd)).await.map_err(e)??;
+        app.restart()
+    }
+    u.install(bytes).map_err(e)?;
     app.restart()
+}
+
+/// .deb/.rpm install command. The plugin chains pkexec, then zenity/kdialog + sudo on any failure, which
+/// asks the password twice (KDE then GNOME dialog); a single pkexec is enough.
+#[cfg(target_os = "linux")]
+fn linux_pkg_cmd() -> Option<&'static [&'static str]> {
+    use tauri::utils::{config::BundleType, platform::bundle_type};
+    match bundle_type()? {
+        BundleType::Deb => Some(&["dpkg", "-i"]),
+        // same version (stable re-release) or older one (channel switch) is refused by a plain -U
+        BundleType::Rpm => Some(&["rpm", "-U", "--replacepkgs", "--oldpackage"]),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn install_pkg(bytes: &[u8], cmd: &[&str]) -> R<()> {
+    let ext = if cmd[0] == "rpm" { "rpm" } else { "deb" };
+    let path = std::env::temp_dir().join(format!("termix-update-{}.{ext}", uuid::Uuid::new_v4()));
+    std::fs::write(&path, bytes).map_err(e)?;
+    let status = std::process::Command::new("pkexec").args(cmd).arg(&path).status();
+    let _ = std::fs::remove_file(&path);
+    match status.map_err(|err| format!("pkexec introuvable : {err}"))?.code() {
+        Some(0) => Ok(()),
+        Some(126) | Some(127) => Err("installation annulée (authentification refusée)".into()),
+        c => Err(format!("échec de l'installation ({} {}, code {c:?})", cmd[0], cmd[1]).into()),
+    }
 }
 
 // ---------- window / menu / tray ----------
