@@ -6,6 +6,7 @@ import {
   House, Box, HardDrive, Flame, Rocket, Folder, FolderOpen, Star, Plus, FolderPlus, Search, Settings,
   X, Upload, Download, RefreshCw, ArrowUp, File, Trash2, PanelLeftInactive, PanelRight, Columns2, Rows2,
   ChevronRight, GripVertical, Activity, FolderTree, CloudCheck, CloudOff, CloudAlert, CloudSync,
+  Plug, Layers, Pencil, Copy, StarOff, ClipboardPaste, Scissors, Eraser, SquareDashed,
 } from "lucide";
 import {
   siDebian, siUbuntu, siAlmalinux, siRockylinux, siFedora, siArchlinux, siAlpinelinux, siCentos, siRedhat, siOpensuse,
@@ -36,6 +37,8 @@ const UI_ICONS = {
   file: File, trash: Trash2, sidebar: PanelLeftInactive, panel: PanelRight, splitH: Columns2, splitV: Rows2,
   chevron: ChevronRight, grip: GripVertical, stats: Activity, folderTree: FolderTree,
   syncOk: CloudCheck, syncOff: CloudOff, syncConflict: CloudAlert, syncing: CloudSync,
+  connect: Plug, tmux: Layers, edit: Pencil, copy: Copy, unstar: StarOff, paste: ClipboardPaste, cut: Scissors,
+  clear: Eraser, selectAll: SquareDashed,
 };
 
 const OS = {
@@ -145,4 +148,40 @@ export function fmtBytes(n) {
 export async function saveHosts() {
   await invoke("save_hosts", { doc: S.hosts });
   document.dispatchEvent(new Event("hosts-changed"));
+}
+
+/**
+ * Context menu drawn in the page: native popups open as a separate, centred window on Wayland / Windows.
+ * items: { label, icon, action, disabled, danger } or "-" (separator).
+ */
+export function contextMenu(e, items) {
+  document.querySelector(".ctx-menu")?.remove();
+  const prev = document.activeElement;
+  const done = () => { menu.remove(); removeEventListener("mousedown", outside, true); removeEventListener("keydown", key, true); removeEventListener("blur", done); removeEventListener("resize", done); };
+  const outside = (ev) => !menu.contains(ev.target) && done();
+  const menu = h("div.mb-drop.ctx-menu", { role: "menu", onmousedown: (ev) => ev.preventDefault() }, // keeps the focus (and text selection) where it was
+    ...items.filter(Boolean).map((x) => x === "-" ? h("div.mb-sep", { role: "separator" })
+      : h("button.mb-item" + (x.danger ? ".danger" : ""), { type: "button", role: "menuitem", disabled: x.disabled,
+          onclick: () => { done(); prev?.focus?.(); x.action(); } },
+          h("span.ctx-label", {}, icon(x.icon, 15), x.label))));
+  // Like a native menu: Escape and arrows go to it even while the focus stays in the terminal.
+  const key = (ev) => {
+    const list = [...menu.querySelectorAll("button:not(:disabled)")], at = list.indexOf(document.activeElement);
+    const step = { ArrowDown: 1, ArrowUp: -1 }[ev.key];
+    if (ev.key === "Escape") { done(); prev?.focus?.(); }
+    else if (step) list[at < 0 ? (step > 0 ? 0 : list.length - 1) : (at + step + list.length) % list.length]?.focus();
+    else return;
+    ev.preventDefault(); ev.stopPropagation();
+  };
+  document.body.append(menu);
+  // Keyboard-opened menus (Shift+F10, menu key) have no pointer position: anchor on the element.
+  const r = e.target.getBoundingClientRect?.(), keyb = !e.clientX && !e.clientY && r;
+  const x = keyb ? r.left : e.clientX, y = keyb ? r.bottom : e.clientY;
+  menu.style.left = Math.max(4, Math.min(x, innerWidth - menu.offsetWidth - 4)) + "px";
+  menu.style.top = Math.max(4, y + menu.offsetHeight > innerHeight - 4 ? y - menu.offsetHeight : y) + "px";
+  if (keyb) menu.querySelector("button:not(:disabled)")?.focus();
+  addEventListener("mousedown", outside, true);
+  addEventListener("keydown", key, true);
+  addEventListener("blur", done);
+  addEventListener("resize", done);
 }

@@ -1,4 +1,7 @@
+mod background;
 mod config;
+#[cfg(target_os = "linux")]
+mod linux_blur;
 mod probe;
 mod ssh;
 mod sync;
@@ -73,9 +76,78 @@ fn save_settings(app: AppHandle, st: State<AppState>, mut settings: Settings) ->
     if let Some(t) = app.tray_by_id("main") {
         let _ = t.set_visible(settings.behavior.tray_icon);
     }
+    if let Some(w) = app.get_webview_window("main") {
+        apply_effects(&w, &settings);
+    }
     refresh_menus(&app);
     syncd::kick(&app);
     Ok(())
+}
+
+/// Window material (Settings → Appearance): the system's blur or glass behind the window, on macOS and
+/// Windows. Linux (KDE) is driven by the UI, which knows the window's rounded outline (`window_blur`).
+fn apply_effects(w: &tauri::WebviewWindow, s: &Settings) {
+    use tauri::utils::{config::WindowEffectsConfig, WindowEffect as E};
+    if cfg!(target_os = "linux") {
+        return;
+    }
+    let effects = match s.window.active() {
+        Some("vibrancy") => vec![E::HudWindow],
+        // macOS 26+; Tauri falls back to the next one (classic vibrancy) on macOS 15 and older.
+        Some("liquid_glass") => vec![E::LiquidGlassRegular, E::HudWindow],
+        Some("acrylic") => vec![E::Acrylic],
+        // Mica is Windows 11 only and fails silently elsewhere.
+        Some("mica") => vec![if windows_11() { E::Mica } else { E::Acrylic }],
+        _ => vec![],
+    };
+    let _ = w.set_effects((!effects.is_empty()).then(|| WindowEffectsConfig { effects, ..Default::default() }));
+}
+
+/// The window has to be transparent from its creation for a material or a see-through terminal.
+fn wants_transparent_window(s: &Settings) -> bool {
+    s.terminal.background_opacity < 100 || s.window.active().is_some()
+}
+
+#[cfg(windows)]
+fn windows_11() -> bool {
+    windows_registry::LOCAL_MACHINE
+        .open(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+        .and_then(|k| k.get_string("CurrentBuildNumber"))
+        .is_ok_and(|b| b.trim().parse::<u32>().is_ok_and(|n| n >= 22000))
+}
+#[cfg(not(windows))]
+fn windows_11() -> bool {
+    false
+}
+
+/// KDE blur behind the window, following its rounded outline: [x, y, width, height, radius] in CSS px, or
+/// null to remove it. Linux only (no-op elsewhere).
+#[tauri::command]
+fn window_blur(window: tauri::WebviewWindow, rect: Option<[f64; 5]>) {
+    #[cfg(target_os = "linux")]
+    {
+        let rects = rect.map(|[x, y, w, h, r]| linux_blur::rounded_rects(x.round() as i32, y.round() as i32, w.round() as i32, h.round() as i32, r.round() as i32));
+        let w = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            if let Ok(gw) = w.gtk_window() {
+                linux_blur::apply(&gw, rects, 0);
+            }
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (window, rect);
+}
+
+/// Terminal background image as a data: URL (an imported name, or a path on this machine).
+#[tauri::command]
+fn read_image(path: String) -> R<String> {
+    background::data_url(&path).map_err(e)
+}
+
+/// Copies a picked image into the config folder (shrunk if big) so it can be synced; returns its name.
+#[tauri::command]
+async fn import_background(path: String) -> R<String> {
+    tauri::async_runtime::spawn_blocking(move || background::import(&path)).await.map_err(e)?.map_err(e)
 }
 
 #[tauri::command]
@@ -340,8 +412,9 @@ fn linux_pkg_cmd() -> Option<&'static [&'static str]> {
     use tauri::utils::{config::BundleType, platform::bundle_type};
     match bundle_type()? {
         BundleType::Deb => Some(&["dpkg", "-i"]),
-        // same version (stable re-release) or older one (channel switch) is refused by a plain -U
-        BundleType::Rpm => Some(&["rpm", "-U", "--replacepkgs", "--oldpackage"]),
+        // same version (stable re-release) or older one (channel switch) is refused by a plain -U;
+        // RPM 6 (Fedora 45+) refuses unsigned packages: the bytes are already checked by the updater's minisign signature.
+        BundleType::Rpm => Some(&["rpm", "-U", "--replacepkgs", "--oldpackage", "--nosignature"]),
         _ => None,
     }
 }
@@ -365,14 +438,26 @@ fn install_pkg(bytes: &[u8], cmd: &[&str]) -> R<()> {
 /// Probes every host every 30 s (or right away when hosts change), then updates UI + tray.
 fn spawn_prober(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut last = None;
         loop {
-            let hosts = HostsDoc::load().hosts;
-            let map = probe::probe_all(&hosts).await;
-            *app.state::<AppState>().status.lock().unwrap() = map.clone();
-            let _ = app.emit("host-status", &map);
-            refresh_tray(&app, &HostsDoc::load());
+            let doc = HostsDoc::load();
+            let map = probe::probe_all(&doc.hosts).await;
+            // Same statuses: no event, no tray menu rebuild (host edits refresh it themselves, see refresh_menus).
+            if last.as_ref() != Some(&map) {
+                *app.state::<AppState>().status.lock().unwrap() = map.clone();
+                let _ = app.emit("host-status", &map);
+                refresh_tray(&app, &doc);
+                last = Some(map);
+            } else if let Some(t) = app.tray_by_id("main") {
+                refresh_tray_icon(&t); // the panel may have switched light/dark
+            }
             let st = app.state::<AppState>();
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(30), st.probe_now.notified()).await;
+            let secs = st.settings.lock().unwrap().performance.probe_secs;
+            if secs == 0 {
+                st.probe_now.notified().await; // on demand only (Hosts → Refresh, host edits)
+            } else {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(secs.into()), st.probe_now.notified()).await;
+            }
         }
     });
 }
@@ -553,14 +638,18 @@ fn tray_menu(app: &AppHandle, doc: &HostsDoc) -> tauri::Result<Menu<tauri::Wry>>
 fn refresh_tray(app: &AppHandle, doc: &HostsDoc) {
     if let (Some(t), Ok(m)) = (app.tray_by_id("main"), tray_menu(app, doc)) {
         let _ = t.set_menu(Some(m));
-        // macOS tints the template icon itself; elsewhere swap white/black only when the panel changes.
-        if cfg!(not(target_os = "macos")) {
-            static LAST: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
-            let dark = panel_is_dark();
-            if LAST.swap(dark as u8, std::sync::atomic::Ordering::Relaxed) != dark as u8 {
-                if let Ok(i) = tray_icon(dark) {
-                    let _ = t.set_icon(Some(i));
-                }
+        refresh_tray_icon(&t);
+    }
+}
+
+/// macOS tints the template icon itself; elsewhere swap white/black only when the panel changes.
+fn refresh_tray_icon(t: &tauri::tray::TrayIcon) {
+    if cfg!(not(target_os = "macos")) {
+        static LAST: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
+        let dark = panel_is_dark();
+        if LAST.swap(dark as u8, std::sync::atomic::Ordering::Relaxed) != dark as u8 {
+            if let Ok(i) = tray_icon(dark) {
+                let _ = t.set_icon(Some(i));
             }
         }
     }
@@ -582,13 +671,11 @@ fn tray_icon(dark: bool) -> tauri::Result<tauri::image::Image<'static>> {
 /// Is the taskbar / top panel dark? Windows: the taskbar follows the *system* theme, not the apps one.
 #[cfg(windows)]
 fn panel_is_dark() -> bool {
-    use std::os::windows::process::CommandExt;
-    std::process::Command::new("reg")
-        .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "/v", "SystemUsesLightTheme"])
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-        .output()
-        .map(|o| !String::from_utf8_lossy(&o.stdout).contains("0x1"))
-        .unwrap_or(true)
+    // Read in-process: this runs every probe round, spawning reg.exe each time was wasteful.
+    windows_registry::CURRENT_USER
+        .open(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        .and_then(|k| k.get_u32("SystemUsesLightTheme"))
+        .map_or(true, |v| v == 0)
 }
 
 /// GNOME's top bar is dark in both modes; KDE panels follow the colour scheme (kdeglobals).
@@ -638,7 +725,12 @@ fn on_menu(app: &AppHandle, id: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = Settings::load();
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    if !settings.behavior.multi_instance {
+        // Must be the first plugin. Launching Termix again (menu, dock, desktop file) brings back the running window.
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)));
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -664,7 +756,14 @@ pub fn run() {
                     wc.background_color = None;
                 }
             }
-            tauri::WebviewWindowBuilder::from_config(&handle, &wc)?.build()?;
+            // See-through terminal or window material: Linux windows are always transparent; macOS / Windows
+            // only when asked, since it is decided at creation (changing it needs a restart).
+            if wants_transparent_window(&settings) {
+                wc.transparent = true;
+                wc.background_color = None;
+            }
+            let win = tauri::WebviewWindowBuilder::from_config(&handle, &wc)?.build()?;
+            apply_effects(&win, &settings);
             #[cfg(target_os = "macos")]
             app.set_menu(build_menu(&handle, &settings)?)?;
             let tray = TrayIconBuilder::with_id("main")
@@ -711,11 +810,11 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            boot, app_ready, set_labels, get_menu, menu_click, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
+            read_image, import_background, window_blur, boot, app_ready, set_labels, get_menu, menu_click, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
             ssh_connect, recent_sessions, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
             check_update, install_update,
-            syncd::sync_status, syncd::sync_set_mode, syncd::sync_login, syncd::sync_logout, syncd::sync_unlock, syncd::sync_lock, syncd::sync_now, syncd::sync_set_interval, syncd::sync_resolve,
+            syncd::sync_status, syncd::sync_set_mode, syncd::sync_login, syncd::sync_logout, syncd::sync_unlock, syncd::sync_lock, syncd::sync_now, syncd::sync_set_interval, syncd::sync_set_keybindings, syncd::sync_take_keybindings, syncd::sync_resolve,
             syncd::p2p_pair_start, syncd::p2p_pair, syncd::p2p_forget, syncd::sync_set_workspace, syncd::sync_workspaces,
             syncd::sync_keys, syncd::sync_key_import, syncd::sync_key_delete
         ])

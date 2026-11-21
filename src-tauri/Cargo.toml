@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
@@ -36,6 +36,8 @@ reqwest = { version = "0.13", features = ["json"] }
 mdns-sd = "0.22.0"
 aes-gcm = "0.10"
 pbkdf2 = { version = "0.12", features = ["hmac"] }
+tauri-plugin-single-instance = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 
 # PBKDF2 (600 000 rounds) is unbearably slow unoptimised: keep it fast in dev builds too.
 [profile.dev.package.sha2]
@@ -44,3 +46,20 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.hmac]
 opt-level = 3
+# Background images are decoded / resized when imported: unoptimised, a 4K image takes seconds.
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+
+[target."cfg(windows)".dependencies]
+windows-registry = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gdkwayland-sys = "0.18"
+gtk = "0.18"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-client = "0.31"
+wayland-protocols-plasma = { version = "0.3", features = ["client"] }

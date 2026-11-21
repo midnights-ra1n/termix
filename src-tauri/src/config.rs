@@ -50,6 +50,8 @@ fn migrate_dir(old: &std::path::Path, new: &std::path::Path) {
 pub struct Settings {
     pub appearance: Appearance,
     pub terminal: Terminal,
+    pub performance: Performance,
+    pub window: WindowStyle,
     pub behavior: Behavior,
     pub ssh: Ssh,
     /// action -> accelerator ("CmdOrCtrl+Shift+D"). Missing actions fall back to defaults.
@@ -72,11 +74,13 @@ pub struct Sync {
     pub device_name: String,
     /// Seconds between two syncs (5 = live). 0 = only at launch and after a local change.
     pub interval_secs: u32,
+    /// synced (adapted to each system's keyboard) | local (this device keeps its own shortcuts)
+    pub keybindings: String,
 }
 
 impl Default for Sync {
     fn default() -> Self {
-        Self { mode: "off".into(), server_url: String::new(), user: String::new(), device_id: String::new(), device_name: String::new(), interval_secs: 30 }
+        Self { mode: "off".into(), server_url: String::new(), user: String::new(), device_id: String::new(), device_name: String::new(), interval_secs: 30, keybindings: "synced".into() }
     }
 }
 
@@ -90,6 +94,9 @@ pub struct Appearance {
     pub ui_font_size: u32,
     pub sidebar: bool,
     pub right_panel: bool,
+    /// Widths in px, set by dragging the panels' inner edge.
+    pub sidebar_width: u32,
+    pub panel_width: u32,
     /// Overrides the theme accent (#RRGGBB), empty = theme accent. Superseded by `colors.accent`.
     pub accent: String,
     /// Overrides any theme key (accent, bg, scene, ink, term_bg, term_fg, cursor, selection…) with "#RRGGBB".
@@ -125,6 +132,64 @@ pub struct Terminal {
     pub focus_single: bool,
     /// Focus border width, in px.
     pub focus_width: u32,
+    /// Background colour opacity, 0-100. Below 100 the background image, or the desktop, shows through.
+    pub background_opacity: u32,
+    /// Blur of the background image, in px (the desktop blur is the window material).
+    pub background_blur: u32,
+    /// Imported image ("<hash>.<ext>" in <config>/backgrounds, synced) or a path on this machine; empty = none.
+    pub background_image: String,
+    pub background_image_opacity: u32,
+    /// cover | contain | tile | center | stretch
+    pub background_image_fit: String,
+    /// left | center | right
+    pub background_image_x: String,
+    /// top | center | bottom
+    pub background_image_y: String,
+}
+
+/// Window material: the system's blur or glass behind the whole window. Device-specific (never
+/// synchronised), since each system has its own materials.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct WindowStyle {
+    /// none | macOS: vibrancy, liquid_glass | Windows: acrylic, mica | Linux (KDE Plasma): blur
+    pub material: String,
+    /// Opacity of the interface (side bars, title bar) over the material, 0-100.
+    pub interface_opacity: u32,
+}
+
+impl Default for WindowStyle {
+    fn default() -> Self {
+        Self { material: "none".into(), interface_opacity: 75 }
+    }
+}
+
+impl WindowStyle {
+    /// The material, if it exists on this system.
+    pub fn active(&self) -> Option<&str> {
+        let ok: &[&str] = if cfg!(target_os = "macos") { &["vibrancy", "liquid_glass"] } else if cfg!(windows) { &["acrylic", "mica"] } else { &["blur"] };
+        ok.contains(&self.material.as_str()).then_some(self.material.as_str())
+    }
+}
+
+/// Device-specific (never synchronised): depends on the machine, not on taste.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct Performance {
+    /// WebGL terminal renderer (GPU); off = DOM renderer.
+    pub gpu: bool,
+    /// Interface transitions and animations.
+    pub animations: bool,
+    /// Seconds between two host status checks; 0 = only on demand (Hosts → Refresh).
+    pub probe_secs: u32,
+    /// Seconds between two refreshes of the Stats panel.
+    pub stats_secs: u32,
+}
+
+impl Default for Performance {
+    fn default() -> Self {
+        Self { gpu: true, animations: true, probe_secs: 30, stats_secs: 3 }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -132,6 +197,8 @@ pub struct Terminal {
 pub struct Behavior {
     pub tray_icon: bool,
     pub run_in_background: bool,
+    /// Several Termix processes at once; when off, launching it again shows the running window. Read at startup.
+    pub multi_instance: bool,
     pub check_updates: bool,
     /// stable | beta | nightly
     pub update_channel: String,
@@ -154,6 +221,8 @@ impl Default for Settings {
         Self {
             appearance: Appearance::default(),
             terminal: Terminal::default(),
+            performance: Performance::default(),
+            window: WindowStyle::default(),
             behavior: Behavior::default(),
             ssh: Ssh { agent_socket: String::new(), keepalive_secs: 30 },
             keybindings: BTreeMap::new(),
@@ -164,7 +233,7 @@ impl Default for Settings {
 }
 impl Default for Appearance {
     fn default() -> Self {
-        Self { language: "auto".into(), theme: "termix".into(), ui_font: UI_FONT.into(), ui_font_size: 13, sidebar: true, right_panel: true, accent: String::new(), colors: BTreeMap::new(), density: "comfortable".into() }
+        Self { language: "auto".into(), theme: "termix".into(), ui_font: UI_FONT.into(), ui_font_size: 13, sidebar: true, right_panel: true, sidebar_width: 248, panel_width: 300, accent: String::new(), colors: BTreeMap::new(), density: "comfortable".into() }
     }
 }
 impl Default for Terminal {
@@ -186,18 +255,24 @@ impl Default for Terminal {
             bold_is_bright: false,
             focus_single: false,
             focus_width: 2,
+            background_opacity: 100,
+            background_blur: 0,
+            background_image: String::new(),
+            background_image_opacity: 100,
+            background_image_fit: "cover".into(),
+            background_image_x: "center".into(),
+            background_image_y: "center".into(),
         }
     }
 }
 impl Default for Behavior {
     fn default() -> Self {
-        Self { tray_icon: true, run_in_background: true, check_updates: true, update_channel: "stable".into(), tray_hosts: "favorites".into(), tray_count: 5 }
+        Self { tray_icon: true, run_in_background: true, multi_instance: false, check_updates: true, update_channel: "stable".into(), tray_hosts: "favorites".into(), tray_count: 5 }
     }
 }
 
 /// Defaults use Cmd on macOS and Ctrl+Shift elsewhere so plain Ctrl keys keep reaching the remote shell.
 pub fn default_keybindings() -> BTreeMap<String, String> {
-    let m = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl+Shift" };
     [
         ("new_tab", "T"),
         ("quick_connect", "O"),
@@ -218,9 +293,10 @@ pub fn default_keybindings() -> BTreeMap<String, String> {
         ("zoom_in", "="),
         ("zoom_out", "-"),
         ("zoom_reset", "0"),
+        ("clear_screen", "Alt+K"), // Cmd+Option+K like macOS Terminal
     ]
     .into_iter()
-    .map(|(a, k)| (a.to_string(), format!("{m}+{k}")))
+    .map(|(a, k)| (a.to_string(), crate::sync::native_key(&format!("Mod+{k}"), cfg!(target_os = "macos"))))
     .collect()
 }
 

@@ -1,7 +1,6 @@
 // Sidebar: host tree (nested folders, drag & drop), search, tags, status dots, editor, import/export.
-import { Menu } from "@tauri-apps/api/menu";
 import { open as openDialog, save as saveDialog, confirm } from "@tauri-apps/plugin-dialog";
-import { S, h, icon, invoke, modal, field, uid, toast, saveHosts, statusDot, HOST_ICONS } from "./ui.js";
+import { S, h, icon, invoke, modal, field, uid, toast, saveHosts, statusDot, HOST_ICONS, contextMenu } from "./ui.js";
 import { t } from "./i18n.js";
 import { wantsTmux } from "./panes.js";
 
@@ -109,7 +108,7 @@ function folderRow(f, depth) {
   const row = h("button.row.folder" + (open ? ".open" : ""), {
     "aria-expanded": String(open), onclick: toggle, style: `--depth:${depth}`,
     onkeydown: (e) => { if ((e.key === "ArrowRight" && !open) || (e.key === "ArrowLeft" && open)) { e.preventDefault(); toggle(); } },
-    oncontextmenu: (e) => { e.preventDefault(); folderMenu(f); },
+    oncontextmenu: (e) => { e.preventDefault(); folderMenu(e, f); },
   }, h("span.chev", {}, icon("chevron", 14)), icon(open ? "folderOpen" : "folder", 15), h("span.name", {}, f.name), h("span.count", {}, String(countIn(f.id))));
   draggable(row, "folder:" + f.id);
   const group = h("div.group", {}, row, open && h("div.children", {}, ...folderChildren(f.id, depth + 1)));
@@ -124,7 +123,7 @@ function hostRow(x, depth) {
     title: `${sub}${x.description ? "\n" + x.description : ""}`,
     ondblclick: () => onOpen(x, true),
     onkeydown: (e) => e.key === "Enter" && (e.preventDefault(), onOpen(x, true)),
-    oncontextmenu: (e) => { e.preventDefault(); hostMenu(x); },
+    oncontextmenu: (e) => { e.preventDefault(); hostMenu(e, x); },
   }, statusDot(x.id), icon(x.icon || "server", 15),
     h("span.name", {}, x.name || x.host),
     x.favorite && h("span.fav", { "aria-label": t("favorite") }, icon("star", 12)),
@@ -135,36 +134,34 @@ function hostRow(x, depth) {
   return row;
 }
 
-async function hostMenu(x) {
-  const m = await Menu.new({ items: [
-    { id: "o", text: t("connect_tab"), action: () => onOpen(x, true) },
+function hostMenu(e, x) {
+  contextMenu(e, [
+    { label: t("connect_tab"), icon: "connect", action: () => onOpen(x, true) },
     // The other way than usual, for this connection only.
-    wantsTmux(x) ? { id: "nt", text: t("connect_no_tmux"), action: () => onOpen(x, { tmux: false }) }
-      : { id: "wt", text: t("connect_tmux"), action: () => onOpen(x, { tmux: true }) },
-    { id: "e", text: t("edit"), action: () => editHost(x) },
-    { id: "d", text: t("duplicate"), action: async () => { S.hosts.hosts.push({ ...structuredClone(x), id: uid(), name: `${x.name} ${t("copy_suffix")}` }); await saveHosts(); } },
-    { id: "f", text: x.favorite ? t("rm_fav") : t("add_fav"), action: async () => { x.favorite = !x.favorite; await saveHosts(); } },
-    { item: "Separator" },
-    { id: "r", text: t("delete"), action: () => removeHost(x) },
-  ] });
-  m.popup();
+    wantsTmux(x) ? { label: t("connect_no_tmux"), icon: "terminal", action: () => onOpen(x, { tmux: false }) }
+      : { label: t("connect_tmux"), icon: "tmux", action: () => onOpen(x, { tmux: true }) },
+    { label: t("edit"), icon: "edit", action: () => editHost(x) },
+    { label: t("duplicate"), icon: "copy", action: async () => { S.hosts.hosts.push({ ...structuredClone(x), id: uid(), name: `${x.name} ${t("copy_suffix")}` }); await saveHosts(); } },
+    { label: x.favorite ? t("rm_fav") : t("add_fav"), icon: x.favorite ? "unstar" : "star", action: async () => { x.favorite = !x.favorite; await saveHosts(); } },
+    "-",
+    { label: t("delete"), icon: "trash", danger: true, action: () => removeHost(x) },
+  ]);
 }
 
-async function folderMenu(f) {
-  const m = await Menu.new({ items: [
-    { id: "n", text: t("new_host_here"), action: () => editHost(null, f.id) },
-    { id: "s", text: t("new_subfolder"), action: () => editFolder(null, f.id) },
-    { id: "e", text: t("rename"), action: () => editFolder(f) },
-    { item: "Separator" },
-    { id: "r", text: t("delete_folder"), action: async () => {
+function folderMenu(e, f) {
+  contextMenu(e, [
+    { label: t("new_host_here"), icon: "plus", action: () => editHost(null, f.id) },
+    { label: t("new_subfolder"), icon: "folderPlus", action: () => editFolder(null, f.id) },
+    { label: t("rename"), icon: "edit", action: () => editFolder(f) },
+    "-",
+    { label: t("delete_folder"), icon: "trash", danger: true, action: async () => {
       if (!(await confirm(t("confirm_folder", f.name), { kind: "warning" }))) return;
       S.hosts.hosts.forEach((x) => x.folder === f.id && (x.folder = f.parent ?? null));
       S.hosts.folders.forEach((c) => c.parent === f.id && (c.parent = f.parent ?? null));
       S.hosts.folders = S.hosts.folders.filter((c) => c !== f);
       await saveHosts();
     } },
-  ] });
-  m.popup();
+  ]);
 }
 
 async function removeHost(x) {

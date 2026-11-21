@@ -1,13 +1,13 @@
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { listen } from "@tauri-apps/api/event";
-import { Menu } from "@tauri-apps/api/menu";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { S, h, icon, invoke, modal, field, toast, isMac } from "./ui.js";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { S, h, icon, invoke, modal, field, toast, isMac, contextMenu } from "./ui.js";
 import { THEMES, resolveTheme, applyTheme, xtermTheme } from "./themes.js";
 import { t, setLanguage, LANGS, menuLabels } from "./i18n.js";
 import { initHosts, render as renderHosts, renderStatus, editHost, editFolder, exportHosts, importHosts } from "./hosts.js";
-import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab, focusTerminal, quickConnect, focused } from "./panes.js";
+import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab, focusTerminal, quickConnect, clearScreen } from "./panes.js";
 import { initMenubar, refreshMenubar } from "./menubar.js";
 import { initPanel, refreshPanel } from "./panel.js";
 import { clearLocalHistory } from "./suggest.js";
@@ -44,14 +44,14 @@ const ACTIONS = {
   open_docs: () => openUrl(`${REPO}/blob/dev/docs/CONFIG.md`),
   new_tab: () => newTab(),
   quick_connect: () => quickConnect(),
-  clear_screen: () => focused()?.term?.clear(),
+  clear_screen: clearScreen,
   refresh_status: () => invoke("refresh_status"),
   shortcuts: () => openSettings("keys"),
   release_notes: () => openUrl(`${REPO}/releases`),
   report_issue: () => openUrl(`${REPO}/issues/new`),
 };
 const BINDABLE = ["new_tab", "quick_connect", "new_host", "close_pane", "split_right", "split_left", "split_down", "split_up", "focus_next", "focus_prev",
-  "next_tab", "prev_tab", "search_hosts", "toggle_sidebar", "toggle_panel", "settings", "zoom_in", "zoom_out", "zoom_reset"];
+  "next_tab", "prev_tab", "search_hosts", "toggle_sidebar", "toggle_panel", "settings", "zoom_in", "zoom_out", "zoom_reset", "clear_screen"];
 
 // ---------- keyboard ----------
 
@@ -102,14 +102,21 @@ addEventListener("keydown", (e) => {
 }, true);
 
 // ---------- context menu ----------
-// Replace the webview menu (Reload / Inspect Element) everywhere; text fields get a native edit menu.
-addEventListener("contextmenu", async (e) => {
+// Replace the webview menu (Reload / Inspect Element) everywhere; text fields get an edit menu.
+addEventListener("contextmenu", (e) => {
   if (e.defaultPrevented) return; // a component already showed its own menu
   e.preventDefault();
   const el = e.target.closest?.("input, textarea");
   if (!el || el.type === "checkbox") return;
-  const m = await Menu.new({ items: [{ item: "Cut" }, { item: "Copy" }, { item: "Paste" }, { item: "Separator" }, { item: "SelectAll" }] });
-  m.popup();
+  el.focus();
+  const sel = el.selectionStart !== el.selectionEnd, ro = el.readOnly || el.disabled;
+  contextMenu(e, [
+    { label: t("cut"), icon: "cut", disabled: !sel || ro, action: () => document.execCommand("cut") },
+    { label: t("copy"), icon: "copy", disabled: !sel, action: () => document.execCommand("copy") },
+    { label: t("paste"), icon: "paste", disabled: ro, action: async () => document.execCommand("insertText", false, await navigator.clipboard.readText()) },
+    "-",
+    { label: t("select_all"), icon: "selectAll", action: () => el.select() },
+  ]);
 });
 
 // ---------- layout / theme / language ----------
@@ -124,8 +131,38 @@ function applyLayout() {
   const a = S.settings.appearance;
   document.body.classList.toggle("no-sidebar", !a.sidebar);
   document.body.classList.toggle("no-panel", !a.right_panel);
+  applyWidths();
   refreshPanel();
 }
+function applyWidths() {
+  const a = S.settings.appearance;
+  // On :root so body.no-sidebar / .no-panel (0px) still win.
+  document.documentElement.style.setProperty("--sw", a.sidebar_width + "px");
+  document.documentElement.style.setProperty("--pw", a.panel_width + "px");
+}
+
+/** Drag the inner edge of the sidebar / side panel to resize it; double-click restores the default width. */
+const WIDTHS = { sidebar_width: 248, panel_width: 300 };
+function resizeEdge(aside, key, left) {
+  const clamp = (w) => Math.round(Math.max(180, Math.min(w, 640, innerWidth * 0.45)));
+  aside.append(h("div.edge", { role: "separator", "aria-orientation": "vertical",
+    ondblclick: () => { S.settings.appearance[key] = WIDTHS[key]; applyWidths(); invoke("save_settings", { settings: S.settings }).catch(() => {}); },
+    onmousedown: (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const r = aside.getBoundingClientRect();
+      document.body.classList.add("resizing"); // no grid transition while dragging
+      const move = (ev) => { S.settings.appearance[key] = clamp(left ? ev.clientX - r.left : r.right - ev.clientX); applyWidths(); };
+      const up = () => {
+        removeEventListener("mousemove", move); removeEventListener("mouseup", up);
+        document.body.classList.remove("resizing");
+        invoke("save_settings", { settings: S.settings }).catch(() => {});
+      };
+      addEventListener("mousemove", move); addEventListener("mouseup", up);
+    } }));
+}
+resizeEdge(document.getElementById("sidebar"), "sidebar_width", true);
+resizeEdge(document.getElementById("panel"), "panel_width", false);
 
 // Colours the user can override on top of any theme (Appearance → Colours, or [appearance.colors]).
 const COLOR_KEYS = ["accent", "bg", "scene", "ink", "term_bg", "term_fg", "cursor", "selection"];
@@ -152,7 +189,41 @@ function applyAppearance() {
   r.setProperty("--ui-font", a.ui_font);
   r.setProperty("--ui-size", a.ui_font_size + "px");
   applyTerminalSettings(xtermTheme(th));
+  applyMaterial();
   applyLayout();
+}
+
+/** Window materials each system offers (Appearance → Window); Linux can only blur, on KDE Plasma. */
+const MATERIALS = { macos: ["vibrancy", "liquid_glass"], windows: ["acrylic", "mica"], linux: ["blur"] };
+const isKde = () => /KDE/i.test(document.documentElement.dataset.desktop || "");
+const materialOn = (s = S.settings) => (MATERIALS[S.platform] || []).includes(s.window.material) && (S.platform !== "linux" || isKde());
+/** macOS / Windows windows are transparent only if created so (Linux always is): a change needs a restart. */
+const needsTransparentWindow = (s) => S.platform === "linux" || s.terminal.background_opacity < 100 || materialOn(s);
+let transparentAtLaunch = true;
+
+// Linux: KDE blurs behind the window along #app's rounded outline (inside the shadow margin), kept up to date.
+let blurObs = null;
+const blurSend = () => {
+  const app = document.getElementById("app"), r = app.getBoundingClientRect();
+  invoke("window_blur", { rect: [r.x, r.y, r.width, r.height, parseFloat(getComputedStyle(app).borderTopLeftRadius) || 0] }).catch(() => {});
+};
+// Hidden then shown again (run in background): GTK gives the window a new surface, without the blur.
+addEventListener("focus", () => blurObs && blurSend());
+document.addEventListener("visibilitychange", () => blurObs && !document.hidden && blurSend());
+
+function applyMaterial() {
+  const on = materialOn();
+  document.body.classList.toggle("material", on);
+  document.documentElement.style.setProperty("--ui-op", S.settings.window.interface_opacity + "%");
+  if (S.platform !== "linux" || on === !!blurObs) return;
+  if (on) {
+    blurObs = new ResizeObserver(() => requestAnimationFrame(blurSend)); // also fires right away
+    blurObs.observe(document.getElementById("app"));
+  } else {
+    blurObs.disconnect();
+    blurObs = null;
+    invoke("window_blur", { rect: null }).catch(() => {});
+  }
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => S.settings?.appearance.theme === "system" && applyAppearance());
 
@@ -163,6 +234,7 @@ function applyLanguage() {
   set("toggle-sidebar", "toggle_sidebar");
   set("add-folder", "new_folder");
   set("add-host", "new_host");
+  set("clear-term", "clear_screen");
   set("split-h", "split_right");
   set("split-v", "split_down");
   set("toggle-panel", "toggle_panel");
@@ -174,11 +246,30 @@ function applyLanguage() {
 
 // ---------- settings ----------
 
+/** Linux windows are always transparent (CSS corners). */
+const isLinuxLike = () => S.platform === "linux";
+
 async function openSettings(section = "general") {
   const s = structuredClone(S.settings);
   const sel = (value, opts) => h("select", {}, ...opts.map(([v, l]) => h("option", { value: v, selected: v === value }, l)));
   const num = (value, min, max, step = 1) => h("input", { type: "number", min, max, step, value });
   const sw = (checked) => h("input.switch", { type: "checkbox", checked, role: "switch" });
+  /** Slider with its value shown next to it; `.input` is the <input> (value read on save). */
+  const range = (value, min, max, unit = "%") => {
+    const input = h("input", { type: "range", min, max, value });
+    const out = h("output", {}, value + unit);
+    input.oninput = () => { out.value = input.value + unit; };
+    const el = h("div.range", {}, input, out);
+    el.input = input;
+    return el;
+  };
+  const bgImage = h("input", { value: s.terminal.background_image, placeholder: t("bg_none") });
+  const imgPick = h("div.file-pick", {}, bgImage,
+    h("button.btn.small", { type: "button", onclick: async () => {
+      const p = await openDialog({ filters: [{ name: t("bg_images"), extensions: ["png", "jpg", "jpeg", "webp", "gif", "avif", "bmp"] }] });
+      if (typeof p === "string") bgImage.value = p;
+    } }, t("bg_choose")),
+    h("button.icon-btn", { type: "button", "aria-label": t("bg_remove"), title: t("bg_remove"), onclick: () => { bgImage.value = ""; } }, icon("close", 14)));
   const allThemes = { ...THEMES, ...s.themes };
   const f = {
     language: sel(s.appearance.language, [["auto", t("lang_auto")], ...Object.entries(LANGS)]),
@@ -204,13 +295,27 @@ async function openSettings(section = "general") {
     keep_focus: sw(s.terminal.keep_focus),
     tray_icon: sw(s.behavior.tray_icon),
     run_in_background: sw(s.behavior.run_in_background),
+    multi_instance: sw(s.behavior.multi_instance),
     check_updates: sw(s.behavior.check_updates),
     tray_hosts: sel(s.behavior.tray_hosts, [["favorites", t("tray_fav")], ["recent", t("tray_recent")], ["all", t("tray_all")]]),
     tray_count: sel(String(s.behavior.tray_count), [...new Set(["3", "5", "8", "10", "15", "20", String(s.behavior.tray_count)])].map((v) => [v, v])),
     update_channel: sel(s.behavior.update_channel, [["stable", t("ch_stable")], ["beta", t("ch_beta")], ["nightly", t("ch_nightly")]]),
     agent_socket: h("input", { value: s.ssh.agent_socket, placeholder: t("agent_auto"), list: "agents" }),
     keepalive: num(s.ssh.keepalive_secs, 0, 600),
+    bg_opacity: range(s.terminal.background_opacity, 0, 100),
+    bg_blur: range(s.terminal.background_blur, 0, 40, " px"),
+    bg_image_opacity: range(s.terminal.background_image_opacity, 0, 100),
+    bg_fit: sel(s.terminal.background_image_fit, ["cover", "contain", "tile", "center", "stretch"].map((v) => [v, t("fit_" + v)])),
+    bg_x: sel(s.terminal.background_image_x, ["left", "center", "right"].map((v) => [v, t("x_" + v)])),
+    bg_y: sel(s.terminal.background_image_y, ["top", "center", "bottom"].map((v) => [v, t("y_" + v)])),
+    gpu: sw(s.performance.gpu),
+    animations: sw(s.performance.animations),
+    probe_secs: sel(String(s.performance.probe_secs), [...new Set(["10", "30", "60", "300", "0", String(s.performance.probe_secs)])].map((v) => [v, v === "0" ? t("probe_manual") : t("every_secs", v)])),
+    material: sel(s.window.material, [["none", t("mat_none")], ...(MATERIALS[S.platform] || []).map((m) => [m, t("mat_" + m)])]),
+    ui_opacity: range(s.window.interface_opacity, 20, 100),
+    stats_secs: sel(String(s.performance.stats_secs), [...new Set(["1", "2", "3", "5", "10", String(s.performance.stats_secs)])].map((v) => [v, t("every_secs", v)])),
   };
+  f.material.disabled = S.platform === "linux" && !isKde(); // GNOME & co. have no blur-behind API
   const agents = h("datalist", { id: "agents" });
   const found = h("ul.agents", {}, h("li.mute", {}, t("detecting")));
   invoke("detect_agents").then((list) => {
@@ -256,18 +361,34 @@ async function openSettings(section = "general") {
       h("div.toggles", {},
         row(isMac() ? t("tray_mac") : t("tray_other"), f.tray_icon),
         row(t("background"), f.run_in_background),
+        row(t("multi_instance"), f.multi_instance, t("multi_instance_hint")),
         row(t("auto_updates"), f.check_updates)),
       h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => checkUpdate(true, f.update_channel.value) }, t("check_now")))],
     appearance: [t("set_appearance"), h("div.form-grid", {}, field(t("theme"), f.theme), field(t("density"), f.density),
       h("div.span2", {}, field(t("ui_font"), f.ui_font)), field(t("size"), f.ui_font_size)),
-      h("h4", {}, t("colors"), h("small.mute", {}, " — ", t("colors_hint"))), h("div.toggles", {}, ...colors.map((c) => c.el))],
+      h("h4", {}, t("colors"), h("small.mute", {}, " — ", t("colors_hint"))), h("div.toggles", {}, ...colors.map((c) => c.el)),
+      h("h4", {}, t("win_title")),
+      h("div.form-grid", {},
+        field(t("material"), f.material, t("material_hint_" + (S.platform === "linux" && !isKde() ? "nokde" : S.platform))),
+        field(t("ui_opacity"), f.ui_opacity, t("ui_opacity_hint")))],
     terminal: [t("set_terminal"), h("div.form-grid", {},
       h("div.span2", {}, field(t("term_font"), f.font_family)),
       field(t("size"), f.font_size), field(t("line_height"), f.line_height),
       field(t("cursor"), f.cursor_style), field(t("scrollback"), f.scrollback),
       field(t("font_weight"), f.font_weight), field(t("letter_spacing"), f.letter_spacing), field(t("term_padding"), f.padding), field(t("focus_width"), f.focus_width)),
       h("div.toggles", {}, row(t("blink"), f.cursor_blink), row(t("bold_bright"), f.bold_is_bright), row(t("copy_select"), f.copy_on_select), row(t("suggestions"), f.suggestions, t("sugg_hint")), row(t("tmux_setting"), f.tmux, t("tmux_setting_hint")), row(t("keep_focus"), f.keep_focus, t("keep_focus_hint")), row(t("focus_single"), f.focus_single, t("focus_single_hint"))),
-      h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => { clearLocalHistory(); toast(t("history_cleared"), "success"); } }, t("clear_history")))],
+      h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => { clearLocalHistory(); toast(t("history_cleared"), "success"); } }, t("clear_history"))),
+      h("h4", {}, t("bg_title")),
+      h("div.form-grid", {},
+        field(t("bg_opacity"), f.bg_opacity, t(isLinuxLike() ? "bg_opacity_hint_linux" : "bg_opacity_hint")),
+        field(t("bg_blur"), f.bg_blur, t("bg_blur_hint")),
+        h("div.span2", {}, field(t("bg_image"), imgPick)),
+        field(t("bg_image_opacity"), f.bg_image_opacity), field(t("bg_fit"), f.bg_fit),
+        field(t("bg_x"), f.bg_x), field(t("bg_y"), f.bg_y))],
+    performance: [t("set_perf"), h("div.form-grid", {},
+      field(t("perf_probe"), f.probe_secs, t("perf_probe_hint")), field(t("perf_stats"), f.stats_secs)),
+      h("div.toggles", {}, row(t("perf_gpu"), f.gpu, t("perf_gpu_hint")), row(t("perf_anim"), f.animations)),
+      h("p.mute.small", {}, t("perf_scrollback_hint"))],
     ssh: [t("set_ssh"), h("div.form-grid", {}, h("div.span2", {}, field(t("agent_socket"), f.agent_socket, t("agent_hint"))), agents,
       field(t("keepalive"), f.keepalive)),
       h("h4", {}, t("agents_found")), found],
@@ -297,8 +418,17 @@ async function openSettings(section = "general") {
   const n = (el, d) => (el.value !== "" && Number.isFinite(+el.value) ? +el.value : d);
   Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.read(), ui_font_size: n(f.ui_font_size, 13), accent: "", colors: Object.fromEntries(colors.filter((c) => c.on.checked).map((c) => [c.k, c.pick.value])), density: f.density.value });
   Object.assign(s.terminal, { font_family: f.font_family.read(), font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, keep_focus: f.keep_focus.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked, focus_single: f.focus_single.checked, focus_width: Math.min(6, Math.max(1, n(f.focus_width, 2))) });
-  Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
+  Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, multi_instance: f.multi_instance.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
   Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30) });
+  // A picked file is copied into the config folder (shrunk if big), so the sync can carry it to other devices.
+  let img = bgImage.value.trim();
+  if (img !== s.terminal.background_image && /[\\/]/.test(img)) {
+    try { img = await invoke("import_background", { path: img }); } catch (e) { toast(String(e), "error"); img = s.terminal.background_image; }
+  }
+  Object.assign(s.window, { material: f.material.value, interface_opacity: +f.ui_opacity.input.value });
+  Object.assign(s.terminal, { background_opacity: +f.bg_opacity.input.value, background_blur: +f.bg_blur.input.value, background_image: img,
+    background_image_opacity: +f.bg_image_opacity.input.value, background_image_fit: f.bg_fit.value, background_image_x: f.bg_x.value, background_image_y: f.bg_y.value });
+  Object.assign(s.performance, { gpu: f.gpu.checked, animations: f.animations.checked, probe_secs: +f.probe_secs.value, stats_secs: +f.stats_secs.value || 3 });
   s.keybindings = kb;
   const langChanged = s.appearance.language !== S.settings.appearance.language;
   try {
@@ -307,6 +437,8 @@ async function openSettings(section = "general") {
     applyAppearance();
     if (langChanged) { applyLanguage(); initPanel(); renderHosts(); initPanes(); }
     scheduleUpdates();
+    invoke("refresh_status").catch(() => {}); // the new check interval starts now
+    if (!transparentAtLaunch && needsTransparentWindow(s)) toast(t("bg_restart"), "info");
   } catch (e) { toast(`${t("settings_title")} : ${e}`, "error"); }
 }
 
@@ -361,14 +493,16 @@ async function boot() {
   Object.assign(S, { settings: b.settings, defaults: b.defaults, platform: b.platform, arch: b.arch, version: b.version, configDir: b.config_dir, hosts, status });
   document.body.dataset.platform = document.documentElement.dataset.platform = S.platform;
   document.documentElement.dataset.desktop = b.desktop;
+  transparentAtLaunch = needsTransparentWindow(S.settings);
   initMenubar();
-  for (const [id, name] of [["toggle-sidebar", "sidebar"], ["add-folder", "folderPlus"], ["add-host", "plus"], ["split-h", "splitH"], ["split-v", "splitV"], ["toggle-panel", "panel"], ["open-settings", "settings"]]) {
+  for (const [id, name] of [["toggle-sidebar", "sidebar"], ["add-folder", "folderPlus"], ["add-host", "plus"], ["clear-term", "clear"], ["split-h", "splitH"], ["split-v", "splitV"], ["toggle-panel", "panel"], ["open-settings", "settings"]]) {
     document.getElementById(id).append(icon(name, 16));
   }
   document.getElementById("toggle-sidebar").onclick = () => setLayout("sidebar");
   document.getElementById("add-folder").onclick = () => editFolder();
   document.getElementById("add-host").onclick = () => editHost();
   document.getElementById("toggle-panel").onclick = () => setLayout("right_panel");
+  document.getElementById("clear-term").onclick = clearScreen;
   document.getElementById("split-h").onclick = () => split("right");
   document.getElementById("split-v").onclick = () => split("down");
   document.getElementById("open-settings").onclick = () => openSettings();

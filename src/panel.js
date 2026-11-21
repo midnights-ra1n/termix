@@ -25,7 +25,7 @@ function refresh() {
   const body = document.getElementById("panel-body");
   if (!S.settings.appearance.right_panel) return;
   if (!pane) return body.replaceChildren(h("p.empty", {}, t("no_session")));
-  if (tab === "stats") { stats(); timer = setInterval(stats, 3000); }
+  if (tab === "stats") { stats(); timer = setInterval(stats, (S.settings.performance.stats_secs || 3) * 1000); }
   else if (tab === "docker") { docker(); timer = setInterval(docker, 5000); }
   else if (tab === "tmux") { tmux(); timer = setInterval(tmux, 5000); }
   else sftp(cwd);

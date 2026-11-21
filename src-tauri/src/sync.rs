@@ -185,7 +185,59 @@ pub fn check_or_init(store: &mut Store, key: &[u8; 32], dev: &str) -> Result<()>
 // ---------- local state <-> records ----------
 
 fn synced_settings(s: &Settings) -> Value {
-    json!({ "appearance": s.appearance, "terminal": s.terminal, "keybindings": s.keybindings, "themes": s.themes })
+    let keys: BTreeMap<_, _> = s.keybindings.iter().map(|(a, k)| (a, portable_key(k, MAC))).collect();
+    json!({ "appearance": s.appearance, "terminal": s.terminal, "keybindings": keys, "themes": s.themes })
+}
+
+const MAC: bool = cfg!(target_os = "macos");
+
+/// Shortcuts travel with "Mod" for the system's main modifier: Cmd on macOS, Ctrl+Shift elsewhere
+/// (plain Ctrl keys belong to the remote shell), so Cmd+T on a Mac is Ctrl+Shift+T on Windows/Linux.
+pub fn portable_key(k: &str, mac: bool) -> String {
+    let (mut mods, key) = split_key(k, mac);
+    if mac && mods.remove("Cmd") || !mac && mods.contains("Ctrl") && mods.contains("Shift") && mods.remove("Ctrl") && mods.remove("Shift") {
+        mods.insert("Mod");
+    }
+    join_key(mods, &key)
+}
+
+/// The other way. shortcut: Cmd+Shift+X becomes Ctrl+Shift+X like Cmd+X (Windows/Linux can't tell them apart).
+pub fn native_key(k: &str, mac: bool) -> String {
+    let (mut mods, key) = split_key(k, mac);
+    if mods.remove("Mod") {
+        if mac { mods.insert("Cmd"); } else { mods.extend(["Ctrl", "Shift"]); }
+    }
+    join_key(mods, &key)
+}
+
+fn split_key(k: &str, mac: bool) -> (BTreeSet<&'static str>, String) {
+    let mut parts: Vec<&str> = k.split('+').collect();
+    let key = parts.pop().unwrap_or_default().to_string();
+    let mods = parts.iter().filter_map(|m| Some(match m.to_lowercase().as_str() {
+        "mod" => "Mod",
+        "cmd" | "command" | "meta" => if mac { "Cmd" } else { "Super" },
+        "super" | "win" => if mac { "Cmd" } else { "Super" },
+        "cmdorctrl" => if mac { "Cmd" } else { "Ctrl" },
+        "ctrl" | "control" => "Ctrl",
+        "alt" | "option" => "Alt",
+        "shift" => "Shift",
+        _ => return None,
+    })).collect();
+    (mods, key)
+}
+
+/// Same order as the shortcut recorder in the UI (accelFromEvent).
+fn join_key(mods: BTreeSet<&str>, key: &str) -> String {
+    let order = ["Mod", "Cmd", "Super", "Ctrl", "Alt", "Shift"];
+    order.iter().filter(|m| mods.contains(*m)).copied().chain([key]).collect::<Vec<_>>().join("+")
+}
+
+/// Synced shortcuts in this system's form, completed with the defaults of actions they don't name.
+pub fn native_keys(v: &Value) -> Option<BTreeMap<String, String>> {
+    let synced: BTreeMap<String, String> = serde_json::from_value(v.clone()).ok()?;
+    let mut keys = config::default_keybindings();
+    keys.extend(synced.iter().map(|(a, k)| (a.clone(), native_key(k, MAC))));
+    Some(keys)
 }
 
 fn secret_ids(doc: &HostsDoc) -> impl Iterator<Item = String> + '_ {
@@ -199,6 +251,7 @@ pub fn record_local(
     settings: &Settings,
     vault: Option<&Vault>,
     secret: &dyn Fn(&str) -> Option<String>,
+    file: &dyn Fn(&str) -> Option<Vec<u8>>,
     dev: &str,
 ) {
     let mut want: BTreeMap<String, Value> = BTreeMap::new();
@@ -208,7 +261,16 @@ pub fn record_local(
     for f in &doc.folders {
         want.insert(format!("folder:{}", f.id), json!(f));
     }
-    want.insert("settings".into(), synced_settings(settings));
+    let mut synced = synced_settings(settings);
+    if let Some(old) = store.records.get("settings").and_then(|r| r.v.as_ref()) {
+        // Shortcuts kept on this device, or the same as the synced ones once adapted to this system: not a change
+        // (Cmd+Shift+D from a Mac reads back as Ctrl+Shift+D here, which must not overwrite the Mac's).
+        let mine: BTreeMap<String, String> = settings.keybindings.iter().map(|(a, k)| (a.clone(), native_key(&portable_key(k, MAC), MAC))).collect();
+        if settings.sync.keybindings == "local" || native_keys(&old["keybindings"]).as_ref() == Some(&mine) {
+            synced["keybindings"] = old["keybindings"].clone();
+        }
+    }
+    want.insert("settings".into(), synced);
     for (k, v) in &want {
         if store.records.get(k).and_then(|r| r.v.as_ref()) != Some(v) {
             store.put(k, Some(v.clone()), dev);
@@ -242,6 +304,27 @@ pub fn record_local(
         }
     }
     store.local_secrets = present;
+
+    // The terminal background image travels too (encrypted, under its content-hash name), only the current one.
+    let bg = settings.terminal.background_image.as_str();
+    let want = crate::background::is_name(bg).then(|| format!("file:{bg}"));
+    let old: Vec<String> = store
+        .records
+        .iter()
+        .filter(|(k, r)| k.starts_with("file:") && r.v.is_some() && Some(*k) != want.as_ref())
+        .map(|(k, _)| k.clone())
+        .collect();
+    for k in old {
+        store.put(&k, None, dev);
+    }
+    if let Some(key) = want {
+        // Missing on the server (never sent, or dropped by a device that switched image meanwhile): send it.
+        if store.records.get(&key).is_none_or(|r| r.v.is_none()) {
+            if let Some(bytes) = file(bg) {
+                store.put(&key, Some(json!({ "enc": vault.seal(&bytes) })), dev);
+            }
+        }
+    }
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -279,8 +362,10 @@ pub fn materialize(store: &Store, doc: &HostsDoc, settings: &Settings) -> (Hosts
         if let Ok(t) = serde_json::from_value(v["terminal"].clone()) {
             s.terminal = t;
         }
-        if let Ok(k) = serde_json::from_value(v["keybindings"].clone()) {
-            s.keybindings = k;
+        if settings.sync.keybindings != "local" {
+            if let Some(k) = native_keys(&v["keybindings"]) {
+                s.keybindings = k;
+            }
         }
         if let Ok(t) = serde_json::from_value(v["themes"].clone()) {
             s.themes = t;
@@ -331,6 +416,18 @@ pub fn apply(store: &mut Store, vault: Option<&Vault>, settings: &Settings) -> R
                 }
             }
         }
+        // Background image named by the settings but not on this device yet.
+        let bg = new_settings.terminal.background_image.as_str();
+        if crate::background::is_name(bg) && crate::background::read(bg).is_none() {
+            let enc = store.records.get(&format!("file:{bg}")).and_then(|r| r.v.as_ref()?.get("enc")?.as_str().map(String::from));
+            if let Some(bytes) = enc.and_then(|e| vault.open(&e)) {
+                let ext = bg.rsplit('.').next().unwrap_or_default();
+                if crate::background::name_for(&bytes, ext) == bg {
+                    crate::background::save(bg, &bytes)?;
+                    applied.settings = true; // the UI loads it
+                }
+            }
+        }
     }
     Ok((applied, new_settings))
 }
@@ -353,10 +450,22 @@ async fn checked(r: reqwest::Response) -> Result<reqwest::Response> {
         bail!("session expirée ou identifiants refusés : reconnectez-vous");
     }
     if !status.is_success() {
-        let msg = r.text().await.unwrap_or_default();
-        bail!("serveur de synchro : {status} {msg}");
+        let body = r.text().await.unwrap_or_default();
+        bail!("{}", http_error(status.as_u16(), &body));
     }
     Ok(r)
+}
+
+/// One readable line: a proxy in front of a down server (Cloudflare 52x, nginx 502…) answers with a whole HTML page.
+fn http_error(code: u16, body: &str) -> String {
+    let body = body.trim();
+    let detail = if body.starts_with('<') {
+        body.split_once("<title>").and_then(|(_, t)| t.split_once("</title>")).map_or("", |(t, _)| t.trim()).to_string()
+    } else {
+        body.chars().take(200).collect()
+    };
+    let what = if matches!(code, 502..=504 | 520..=530) { "serveur de synchro injoignable" } else { "serveur de synchro" };
+    if detail.is_empty() { format!("{what} (HTTP {code})") } else { format!("{what} (HTTP {code} : {detail})") }
 }
 
 /// Returns (token, vault salt).
@@ -420,6 +529,47 @@ mod tests {
         let msg = format!("{err:#}");
         assert!(msg.contains(": "), "{msg}");
         println!("{msg}");
+    }
+
+    #[test]
+    fn shortcuts_are_adapted_to_each_system() {
+        assert_eq!(portable_key("Cmd+T", true), "Mod+T");
+        assert_eq!(portable_key("Ctrl+Shift+T", false), "Mod+T");
+        assert_eq!(native_key("Mod+T", false), "Ctrl+Shift+T");
+        assert_eq!(native_key("Mod+T", true), "Cmd+T");
+        assert_eq!(native_key(&portable_key("Cmd+Alt+Right", true), false), "Ctrl+Alt+Shift+Right");
+        assert_eq!(native_key(&portable_key("Ctrl+Alt+Shift+Right", false), true), "Cmd+Alt+Right");
+        // Plain Ctrl, and keys that are themselves "+"-free symbols, pass through.
+        assert_eq!(native_key(&portable_key("Ctrl+K", false), true), "Ctrl+K");
+        assert_eq!(native_key(&portable_key("Option+Cmd+,", true), false), "Ctrl+Alt+Shift+,");
+    }
+
+    #[test]
+    fn adapted_shortcuts_dont_bounce_between_systems() {
+        let mut store = Store::default();
+        let mut s = Settings { keybindings: config::default_keybindings(), ..Default::default() };
+        record_local(&mut store, &HostsDoc::default(), &s, None, &|_| None, &|_| None, "me");
+        let ts = store.records["settings"].ts;
+        // A record whose shortcuts read back as ours (other spelling) is left alone.
+        let mut v = store.records["settings"].v.clone().unwrap();
+        v["keybindings"]["new_tab"] = json!(if MAC { "Command+T" } else { "Mod+Shift+T" });
+        store.records.insert("settings".into(), rec(v.clone(), ts, "other"));
+        record_local(&mut store, &HostsDoc::default(), &s, None, &|_| None, &|_| None, "me");
+        assert_eq!(store.records["settings"].dev, "other");
+        // Device-local shortcuts: never sent, never applied.
+        s.sync.keybindings = "local".into();
+        s.keybindings.insert("new_tab".into(), "Alt+Y".into());
+        record_local(&mut store, &HostsDoc::default(), &s, None, &|_| None, &|_| None, "me");
+        assert_eq!(store.records["settings"].dev, "other");
+        assert_eq!(materialize(&store, &HostsDoc::default(), &s).1.keybindings["new_tab"], "Alt+Y");
+    }
+
+    #[test]
+    fn html_error_pages_are_summed_up() {
+        let page = "<!DOCTYPE html><html><head><title>521 - Web server is down</title><style>h1{}</style></head><body>…</body></html>";
+        assert_eq!(http_error(521, page), "serveur de synchro injoignable (HTTP 521 : 521 - Web server is down)");
+        assert_eq!(http_error(502, "<html><body>Bad</body></html>"), "serveur de synchro injoignable (HTTP 502)");
+        assert_eq!(http_error(409, "compte déjà existant"), "serveur de synchro (HTTP 409 : compte déjà existant)");
     }
 
     fn rec(v: Value, ts: i64, dev: &str) -> Rec {
@@ -507,14 +657,14 @@ mod tests {
         let mut doc = HostsDoc::default();
         doc.hosts.push(Host { id: "h1".into(), name: "web".into(), ..Default::default() });
         let s = Settings::default();
-        record_local(&mut store, &doc, &s, None, &|_| None, "a");
+        record_local(&mut store, &doc, &s, None, &|_| None, &|_| None, "a");
         assert!(store.records["host:h1"].v.is_some());
         let ts = store.records["host:h1"].ts;
         // Unchanged: no new timestamp.
-        record_local(&mut store, &doc, &s, None, &|_| None, "a");
+        record_local(&mut store, &doc, &s, None, &|_| None, &|_| None, "a");
         assert_eq!(store.records["host:h1"].ts, ts);
         doc.hosts.clear();
-        record_local(&mut store, &doc, &s, None, &|_| None, "a");
+        record_local(&mut store, &doc, &s, None, &|_| None, &|_| None, "a");
         assert_eq!(store.records["host:h1"].v, None);
     }
 
@@ -527,15 +677,43 @@ mod tests {
         // A device that never had the secret (no keychain, or not applied yet) must not tombstone it.
         let mut store = Store::default();
         store.records.insert("secret:h1".into(), rec(json!({ "enc": vault.seal(b"pw") }), 1, "other"));
-        record_local(&mut store, &doc, &s, Some(&vault), &|_| None, "a");
+        record_local(&mut store, &doc, &s, Some(&vault), &|_| None, &|_| None, "a");
         assert!(store.records["secret:h1"].v.is_some());
         // A device that had it and lost it (user cleared the password) propagates the deletion.
-        record_local(&mut store, &doc, &s, Some(&vault), &|id| (id == "h1").then(|| "pw".to_string()), "a");
+        record_local(&mut store, &doc, &s, Some(&vault), &|id| (id == "h1").then(|| "pw".to_string()), &|_| None, "a");
         assert!(store.local_secrets.contains("secret:h1"));
         let sealed = store.records["secret:h1"].v.clone().unwrap();
         assert!(!sealed.to_string().contains("pw\""), "secret must be encrypted");
-        record_local(&mut store, &doc, &s, Some(&vault), &|_| None, "a");
+        record_local(&mut store, &doc, &s, Some(&vault), &|_| None, &|_| None, "a");
         assert_eq!(store.records["secret:h1"].v, None);
+    }
+
+    #[test]
+    fn background_image_travels_encrypted_once_and_old_ones_are_dropped() {
+        let vault = Vault::new(&[7u8; 32]);
+        let doc = HostsDoc::default();
+        let img = b"\x89PNG not really an image".to_vec();
+        let name = crate::background::name_for(&img, "png");
+        let key = format!("file:{name}");
+        let mut s = Settings::default();
+        s.terminal.background_image = name.clone();
+        let file = |n: &str| (n == name).then(|| img.clone());
+        let mut store = Store::default();
+        // Without the vault nothing is sent (like passwords).
+        record_local(&mut store, &doc, &s, None, &|_| None, &file, "a");
+        assert!(!store.records.contains_key(&key));
+        record_local(&mut store, &doc, &s, Some(&vault), &|_| None, &file, "a");
+        let sealed = store.records[&key].v.clone().unwrap();
+        assert!(!sealed.to_string().contains("not really"), "image must be encrypted");
+        assert_eq!(vault.open(sealed["enc"].as_str().unwrap()).unwrap(), img);
+        // Sent once: later rounds leave it alone.
+        store.dirty.clear();
+        record_local(&mut store, &doc, &s, Some(&vault), &|_| None, &file, "a");
+        assert!(!store.dirty.contains(&key));
+        // Another background (here a path on this machine, never synced): the old file leaves the sync.
+        s.terminal.background_image = "/home/me/pic.png".into();
+        record_local(&mut store, &doc, &s, Some(&vault), &|_| None, &file, "a");
+        assert_eq!(store.records[&key].v, None);
     }
 
     #[test]

@@ -33,8 +33,13 @@ export function syncView() {
     device.onchange = apply;
     const every = h("select", { onchange: () => invoke("sync_set_interval", { secs: +every.value }).then(draw, (x) => toast(t("sync_error", x), "error")) },
       ...[...new Set([5, 15, 30, 60, 300, 900, 0, st.interval])].map((v) => h("option", { value: v, selected: v === st.interval }, every_label(v))));
+    const keys = h("select", { onchange: () => invoke("sync_set_keybindings", { mode: keys.value }).then(draw, (x) => toast(t("sync_error", x), "error")) },
+      ...[["synced", t("sync_keys_synced")], ["local", t("sync_keys_local")]].map(([v, l]) => h("option", { value: v, selected: v === st.keybindings }, l)));
+    const take = h("button.btn.small", { type: "button", onclick: act(() => invoke("sync_take_keybindings").then(draw), t("sync_done")) }, t("sync_keys_take"));
     const parts = [h("p.mute.small", {}, t("sync_intro")), h("div.form-grid", {}, field(t("sync_mode"), mode), field(t("sync_device"), device),
-      st.mode !== "off" ? h("div.span2", {}, field(t("sync_every"), every, t("sync_every_hint"))) : null)];
+      st.mode !== "off" ? h("div.span2", {}, field(t("sync_every"), every, t("sync_every_hint"))) : null,
+      st.mode !== "off" ? h("div.span2", {}, field(t("sync_kb"), keys, t(st.keybindings === "local" ? "sync_keys_local_hint" : "sync_kb_hint"))) : null,
+      st.mode !== "off" && st.keybindings === "local" ? h("div.span2.actions", {}, take) : null)];
     if (st.conflicts.length) parts.push(conflictsPart(st, draw));
     if (st.mode === "server") parts.push(serverPart(st, draw));
     if (st.mode === "p2p") parts.push(p2pPart(st, draw));

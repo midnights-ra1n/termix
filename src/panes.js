@@ -1,10 +1,10 @@
 // Tabs, split panes (tmux-like) and xterm terminals bound to SSH sessions.
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Channel } from "@tauri-apps/api/core";
-import { Menu } from "@tauri-apps/api/menu";
 import { listen } from "@tauri-apps/api/event";
-import { S, h, icon, invoke, modal, field, toast, statusDot, uid, saveHosts } from "./ui.js";
+import { S, h, icon, invoke, modal, field, toast, statusDot, uid, saveHosts, contextMenu } from "./ui.js";
 import { t as tr } from "./i18n.js";
 import { Suggest } from "./suggest.js";
 import logo from "../assets/icon-rounded.svg";
@@ -20,7 +20,7 @@ export const events = new EventTarget(); // "focus" when the focused pane/sessio
 class Pane {
   constructor() {
     this.el = h("div.pane", { onmousedown: () => focusPane(this) });
-    this.el.addEventListener("contextmenu", (e) => { if (e.target.closest("input")) return; e.preventDefault(); this.contextMenu(); });
+    this.el.addEventListener("contextmenu", (e) => { if (e.target.closest("input")) return; e.preventDefault(); this.contextMenu(e); });
     // Drop a host from the sidebar onto a pane: connect there (or in a new tab if it is busy).
     this.el.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("text/plain")) { e.preventDefault(); this.el.classList.add("drop"); } });
     this.el.addEventListener("dragleave", (e) => { if (!this.el.contains(e.relatedTarget)) this.el.classList.remove("drop"); });
@@ -80,6 +80,7 @@ class Pane {
     const box = h("div.term");
     this.el.replaceChildren(box);
     term.open(box);
+    if (S.settings.performance.gpu) this.gpu();
     // Shells and tmux send DECRST 12 (terminfo cnorm), which would stop the blink for good: the setting wins.
     for (const final of ["h", "l"]) term.parser.registerCsiHandler({ prefix: "?", final }, (p) => p.length === 1 && p[0] === 12);
     term.onData((d) => invoke("ssh_write", { id: this.session, data: d }).catch(() => {}));
@@ -128,27 +129,43 @@ class Pane {
     const sub = t?.onKey(({ domEvent }) => { if (domEvent.key === "Enter") { sub.dispose(); this.dispose(); this.connect(this.host); } });
     events.dispatchEvent(new Event("focus"));
   }
-  async contextMenu() {
+  contextMenu(e) {
     const term = this.term;
     focusPane(this);
-    const items = term ? [
-      { id: "c", text: tr("ctx_copy"), enabled: term.hasSelection(), action: () => navigator.clipboard.writeText(term.getSelection()) },
-      { item: "Paste" }, // native paste into xterm's textarea: no clipboard permission prompt
-      { id: "a", text: tr("ctx_select_all"), action: () => term.selectAll() },
-      { id: "x", text: tr("ctx_clear"), action: () => term.clear() },
-      { item: "Separator" },
-    ] : [];
-    const m = await Menu.new({ items: [...items,
-      { id: "r", text: tr("split_right"), action: () => split("right") },
-      { id: "d", text: tr("split_down"), action: () => split("down") },
-      { item: "Separator" },
-      { id: "w", text: tr("close_pane"), action: () => closePane() },
-    ] });
-    m.popup();
+    contextMenu(e, [
+      ...(term ? [
+        { label: tr("ctx_copy"), icon: "copy", disabled: !term.hasSelection(), action: () => navigator.clipboard.writeText(term.getSelection()) },
+        { label: tr("ctx_paste"), icon: "paste", action: async () => term.paste(await navigator.clipboard.readText()) },
+        { label: tr("ctx_select_all"), icon: "selectAll", action: () => term.selectAll() },
+        { label: tr("ctx_clear"), icon: "clear", action: () => this.clearScreen() },
+        "-",
+      ] : []),
+      { label: tr("split_right"), icon: "splitH", action: () => split("right") },
+      { label: tr("split_down"), icon: "splitV", action: () => split("down") },
+      "-",
+      { label: tr("close_pane"), icon: "close", action: () => closePane() },
+    ]);
   }
   refit() {
     if (!this.fit || !this.el.isConnected) return;
     try { this.fit.fit(); } catch {}
+  }
+  /** Like typing `clear`, without touching what is being typed: local scrollback wiped, then Ctrl+L
+   *  so the shell redraws its prompt (a full-screen program just repaints). */
+  clearScreen() {
+    if (!this.term) return;
+    this.term.clear();
+    if (this.session) invoke("ssh_write", { id: this.session, data: "\x0c" }).catch(() => {});
+  }
+  /** GPU renderer: far smoother on heavy output. Without WebGL2, or when the browser drops the context
+   *  (too many live terminals), xterm falls back to its DOM renderer. */
+  gpu() {
+    try {
+      const gl = new WebglAddon();
+      gl.onContextLoss(() => { gl.dispose(); if (this.webgl === gl) this.webgl = null; });
+      this.term.loadAddon(gl);
+      this.webgl = gl;
+    } catch { this.webgl = null; }
   }
   dispose() {
     if (this.session) invoke("ssh_close", { id: this.session });
@@ -156,8 +173,8 @@ class Pane {
     this.ro?.disconnect();
     this.suggest?.dispose();
     this.suggest = null;
-    this.term?.dispose();
-    this.term = this.fit = null;
+    this.term?.dispose(); // also disposes its addons (WebGL context included)
+    this.term = this.fit = this.webgl = null;
   }
 }
 
@@ -396,11 +413,20 @@ export function setZoom(delta) {
   applyTerminalSettings();
 }
 
+/** Background image or see-through colour: xterm draws no background, the pane's CSS layers do. */
+/** Below 100 % the pane's CSS layers (image, colour) show through xterm. At 100 % they would be hidden
+ *  anyway: xterm stays opaque, which keeps subpixel (ClearType) text on Windows. */
+const customBg = () => S.settings.terminal.background_opacity < 100;
+/** Same colour, alpha 0: xterm draws no background, but inverse video (htop, tmux bar, less) and contrast
+ *  checks still use the real colour instead of black. */
+const clearBg = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c + "00" : "#00000000");
+
 function termOptions() {
-  const t = S.settings.terminal;
+  const t = S.settings.terminal, see = customBg();
   return {
     fontFamily: t.font_family, fontSize: t.font_size + zoom, lineHeight: t.line_height, cursorStyle: t.cursor_style,
-    cursorBlink: t.cursor_blink, scrollback: t.scrollback, theme: xtheme, fontWeight: t.font_weight,
+    cursorBlink: t.cursor_blink, scrollback: t.scrollback, fontWeight: t.font_weight,
+    allowTransparency: see, theme: see ? { ...xtheme, background: clearBg(xtheme.background) } : xtheme,
     letterSpacing: t.letter_spacing, drawBoldTextInBrightColors: t.bold_is_bright,
   };
 }
@@ -411,16 +437,50 @@ export function applyTerminalSettings(theme) {
   document.documentElement.style.setProperty("--term-pad", S.settings.terminal.padding + "px");
   document.documentElement.style.setProperty("--focus-w", Math.min(6, Math.max(1, S.settings.terminal.focus_width || 2)) + "px");
   document.body.classList.toggle("focus-single", S.settings.terminal.focus_single);
+  document.body.classList.toggle("no-anim", !S.settings.performance.animations);
+  applyBackground();
   // xterm measures the cell once per font change: wait until a bundled font is actually loaded.
   const { font_family: ff, font_size: fs } = S.settings.terminal;
   Promise.all([`${fs}px ${ff}`, `bold ${fs}px ${ff}`].map((f) => document.fonts.load(f))).catch(() => {}).then(() => {
+    const opts = termOptions(), gpu = S.settings.performance.gpu;
     for (const tab of tabs) for (const p of leaves(tab.root)) {
       if (!p.term) continue;
-      Object.assign(p.term.options, termOptions());
+      // The WebGL renderer picks transparency up at creation: rebuild it when that changes.
+      if (p.webgl && (!gpu || p.term.options.allowTransparency !== opts.allowTransparency)) { p.webgl.dispose(); p.webgl = null; }
+      Object.assign(p.term.options, opts);
+      if (gpu && !p.webgl) p.gpu();
+      p.webgl?.clearTextureAtlas(); // glyphs drawn with the fallback font before it loaded
       p.refit();
     }
   });
 }
+
+const FIT = { cover: ["cover", "no-repeat"], contain: ["contain", "no-repeat"], tile: ["auto", "repeat"], center: ["auto", "no-repeat"], stretch: ["100% 100%", "no-repeat"] };
+let bgPath = "";
+const bgWarned = new Set();
+/** Terminal background layers (style.css, body.see-through): image under a colour of adjustable opacity. */
+function applyBackground() {
+  const t = S.settings.terminal, r = document.documentElement.style;
+  const [size, repeat] = FIT[t.background_image_fit] || FIT.cover;
+  document.body.classList.toggle("see-through", customBg());
+  r.setProperty("--term-op", Math.min(100, t.background_opacity) + "%");
+  r.setProperty("--term-blur", t.background_blur + "px");
+  r.setProperty("--term-img-op", t.background_image_opacity / 100);
+  r.setProperty("--term-img-size", size);
+  r.setProperty("--term-img-repeat", repeat);
+  r.setProperty("--term-img-pos", `${t.background_image_x || "center"} ${t.background_image_y || "center"}`);
+  if (t.background_image === bgPath) return;
+  const want = bgPath = t.background_image;
+  if (!want) return r.removeProperty("--term-img");
+  invoke("read_image", { path: want }).then((url) => bgPath === want && r.setProperty("--term-img", `url("${url}")`), (e) => {
+    r.removeProperty("--term-img");
+    bgPath = ""; // retried on the next settings change (e.g. when the sync delivers the file)
+    if (!bgWarned.has(want)) { bgWarned.add(want); toast(String(e), "error"); }
+  });
+}
+
+/** Clears the focused terminal (menu, shortcut, title bar button). */
+export const clearScreen = () => current?.focused?.clearScreen();
 
 listen("ssh-closed", (e) => bySession.get(e.payload)?.closed());
 export const initPanes = render;

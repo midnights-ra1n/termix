@@ -132,7 +132,7 @@ async fn sync_round(app: &AppHandle, ctl: &SyncCtl, settings: &config::Settings)
     let (mode, dev) = (settings.sync.mode.clone(), settings.sync.device_id.clone());
     let vault = Vault::load();
     let mut store = Store::load();
-    sync::record_local(&mut store, &HostsDoc::load(), &settings, vault.as_ref(), &config::secret_get, &dev);
+    sync::record_local(&mut store, &HostsDoc::load(), &settings, vault.as_ref(), &config::secret_get, &crate::background::read, &dev);
     if config::denied() {
         // Unreadable secrets would look deleted and be wiped on every device: skip the round, store unsaved.
         return Err("accès au trousseau refusé : relance Termix et autorise-le".into());
@@ -190,7 +190,7 @@ fn status(app: &AppHandle) -> Value {
         "logged_in": config::secret_get("sync:token").is_some(),
         "unlocked": Vault::load().is_some(),
         "vault_exists": store.records.get("vault:check").is_some_and(|r| r.v.is_some()),
-        "last_ok": store.last_ok, "last_error": store.last_error, "interval": s.interval_secs,
+        "last_ok": store.last_ok, "last_error": store.last_error, "interval": s.interval_secs, "keybindings": s.keybindings,
         "syncing": ctl.syncing.load(std::sync::atomic::Ordering::Relaxed),
         "conflicts": store.conflicts.iter().map(|(k, c)| json!({
             "key": k,
@@ -313,6 +313,33 @@ fn device_name(store: &Store, dev: &str) -> String {
 pub async fn sync_set_interval(app: AppHandle, secs: u32) -> R<()> {
     save_sync(&app, |s| s.interval_secs = secs)?;
     kick(&app);
+    Ok(())
+}
+
+/// synced | local (see config::Sync::keybindings). Going back to synced publishes this device's shortcuts.
+#[tauri::command]
+pub async fn sync_set_keybindings(app: AppHandle, mode: String) -> R<()> {
+    if !["synced", "local"].contains(&mode.as_str()) {
+        return Err(format!("mode inconnu : {mode}"));
+    }
+    save_sync(&app, |s| s.keybindings = mode)?;
+    kick(&app);
+    Ok(())
+}
+
+/// Replaces this device's shortcuts with the synced ones (adapted to this system).
+#[tauri::command]
+pub async fn sync_take_keybindings(app: AppHandle) -> R<()> {
+    let store = Store::load();
+    let keys = store.records.get("settings").and_then(|r| sync::native_keys(&r.v.as_ref()?["keybindings"]))
+        .ok_or("aucun raccourci synchronisé pour l'instant")?;
+    let st = app.state::<AppState>();
+    let mut s = st.settings.lock().unwrap().clone();
+    s.keybindings = keys;
+    s.save().map_err(e)?;
+    *st.settings.lock().unwrap() = s;
+    crate::refresh_menus(&app);
+    let _ = app.emit("sync-changed", json!({ "hosts": false, "settings": true }));
     Ok(())
 }
 
