@@ -189,7 +189,8 @@ fn synced_settings(s: &Settings) -> Value {
     json!({ "appearance": s.appearance, "terminal": s.terminal, "keybindings": keys, "themes": s.themes })
 }
 
-const MAC: bool = cfg!(target_os = "macos");
+/// Apple keyboards (macOS, iPad): Cmd is the main modifier.
+pub const MAC: bool = cfg!(any(target_os = "macos", target_os = "ios"));
 
 /// Shortcuts travel with "Mod" for the system's main modifier: Cmd on macOS, Ctrl+Shift elsewhere
 /// (plain Ctrl keys belong to the remote shell), so Cmd+T on a Mac is Ctrl+Shift+T on Windows/Linux.

@@ -18,4 +18,7 @@ jobs:
       - run: node scripts/check-i18n.mjs && node scripts/check-suggest.mjs
       - run: pnpm build
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml
+      # The iOS app shares the backend: it must keep compiling without the desktop-only parts.
+      - if: runner.os == 'macOS'
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios
       - run: cargo test --manifest-path src-tauri/Cargo.toml

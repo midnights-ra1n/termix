@@ -2,14 +2,15 @@ import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { S, h, icon, invoke, modal, field, toast, isMac, contextMenu } from "./ui.js";
+import { S, h, icon, invoke, modal, field, toast, isMac, isIOS, contextMenu, openDialog } from "./ui.js";
 import { THEMES, resolveTheme, applyTheme, xtermTheme } from "./themes.js";
 import { t, setLanguage, LANGS, menuLabels } from "./i18n.js";
 import { initHosts, render as renderHosts, renderStatus, editHost, editFolder, exportHosts, importHosts } from "./hosts.js";
-import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab, focusTerminal, quickConnect, clearScreen } from "./panes.js";
+import { initPanes, openHost, split, closePane, cycleFocus, cycleTab, setZoom, applyTerminalSettings, newTab, focusTerminal, quickConnect, clearScreen,
+  tabList, selectTabAt, closeTabAt, keyInput, ctrlOn } from "./panes.js";
 import { initMenubar, refreshMenubar } from "./menubar.js";
-import { initPanel, refreshPanel } from "./panel.js";
+import { initPanel, refreshPanel, PANEL_TABS, panelTab, setPanelTab, panelActions } from "./panel.js";
+import { initNative, refreshChrome, SF } from "./native.js";
 import { clearLocalHistory } from "./suggest.js";
 import { syncView, initSyncStatus } from "./sync.js";
 import appIcon from "../src-tauri/icons/128x128@2x.png";
@@ -93,9 +94,9 @@ function prettyAccel(a) {
   return a.split("+").map((p) => sym[p.toLowerCase()] || arrows[p] || p).join("");
 }
 
-// On macOS the native menu owns the shortcuts; elsewhere we catch them before xterm does.
+// On macOS the native menu owns the shortcuts; elsewhere (iPad keyboards too) we catch them before xterm does.
 addEventListener("keydown", (e) => {
-  if (isMac() || document.querySelector(".backdrop")) return;
+  if (S.platform === "macos" || document.querySelector(".backdrop")) return;
   for (const [action, accel] of Object.entries(S.settings.keybindings)) {
     if (ACTIONS[action] && matches(accel, e)) { e.preventDefault(); e.stopPropagation(); ACTIONS[action](); return; }
   }
@@ -119,20 +120,69 @@ addEventListener("contextmenu", (e) => {
   ]);
 });
 
+// ---------- touch (iOS) ----------
+
+// No right click: a long press opens the same menus (hosts, folders, terminal, text fields).
+let press = null;
+addEventListener("touchstart", (e) => {
+  clearTimeout(press?.timer);
+  if (!isIOS() || e.touches.length !== 1) return (press = null);
+  const { clientX, clientY } = e.touches[0], target = e.target;
+  press = { x: clientX, y: clientY, fired: false, timer: setTimeout(() => {
+    press.fired = true;
+    target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX, clientY }));
+  }, 500) };
+}, { passive: true });
+addEventListener("touchmove", (e) => {
+  const p = e.touches[0];
+  if (press && Math.hypot(p.clientX - press.x, p.clientY - press.y) > 10) clearTimeout(press.timer);
+}, { passive: true });
+addEventListener("touchend", (e) => {
+  clearTimeout(press?.timer);
+  if (press?.fired) e.preventDefault(); // no click after the menu: it would close it right away
+}, { passive: false });
+// One tap opens what a double click opens on a computer (host, file, folder of the SFTP panel).
+addEventListener("click", (e) => isIOS() && e.target.closest?.(".row:not(.folder)")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+addEventListener("dblclick", (e) => isIOS() && e.isTrusted && e.stopImmediatePropagation(), true); // a double tap would open twice
+
+// The on-screen keyboard only shrinks the visual viewport: size the page to it so the terminal stays above.
+visualViewport?.addEventListener("resize", () => {
+  if (!isIOS()) return;
+  const kb = innerHeight - visualViewport.height > 80;
+  document.documentElement.style.height = visualViewport.height + "px";
+  document.body.classList.toggle("kb-open", kb);
+  // The terminal follows the keyboard; a form field (bottom sheet) needs iOS to pan up to it.
+  if (!kb || document.activeElement?.closest(".xterm")) scrollTo(0, 0);
+});
+
 // ---------- layout / theme / language ----------
 
+// iPhone: the side bars are drawers over the terminal, one at a time. Not saved: the settings are synced
+// with the computers, whose side bars must not open or close with the phone's.
+const phoneMq = matchMedia("(max-width: 700px)");
+const isPhone = () => isIOS() && phoneMq.matches;
+let drawer = null;
+const shown = (key) => (isPhone() ? drawer === key : S.settings.appearance[key]);
+phoneMq.addEventListener("change", () => S.settings && applyLayout());
+
 function setLayout(key, value) {
+  if (isPhone()) {
+    const on = value ?? drawer !== key;
+    drawer = on ? key : drawer === key ? null : drawer;
+    return applyLayout();
+  }
   const a = S.settings.appearance;
   a[key] = value ?? !a[key];
   applyLayout();
   invoke("save_settings", { settings: S.settings }).catch(() => {});
 }
 function applyLayout() {
-  const a = S.settings.appearance;
-  document.body.classList.toggle("no-sidebar", !a.sidebar);
-  document.body.classList.toggle("no-panel", !a.right_panel);
+  document.body.classList.toggle("phone", isPhone());
+  document.body.classList.toggle("no-sidebar", !shown("sidebar"));
+  document.body.classList.toggle("no-panel", !shown("right_panel"));
   applyWidths();
   refreshPanel();
+  refreshChrome();
 }
 function applyWidths() {
   const a = S.settings.appearance;
@@ -193,12 +243,13 @@ function applyAppearance() {
   applyLayout();
 }
 
-/** Window materials each system offers (Appearance → Window); Linux can only blur, on KDE Plasma. */
-const MATERIALS = { macos: ["vibrancy", "liquid_glass"], windows: ["acrylic", "mica"], linux: ["blur"] };
+/** Window materials each system offers (Appearance → Window); Linux can only blur, on KDE Plasma.
+ *  iOS draws its glass itself (style.css): nothing is behind a full-screen app. */
+const MATERIALS = { macos: ["vibrancy", "liquid_glass"], windows: ["acrylic", "mica"], linux: ["blur"], ios: ["liquid_glass"] };
 const isKde = () => /KDE/i.test(document.documentElement.dataset.desktop || "");
 const materialOn = (s = S.settings) => (MATERIALS[S.platform] || []).includes(s.window.material) && (S.platform !== "linux" || isKde());
 /** macOS / Windows windows are transparent only if created so (Linux always is): a change needs a restart. */
-const needsTransparentWindow = (s) => S.platform === "linux" || s.terminal.background_opacity < 100 || materialOn(s);
+const needsTransparentWindow = (s) => S.platform === "linux" || (!isIOS() && (s.terminal.background_opacity < 100 || materialOn(s)));
 let transparentAtLaunch = true;
 
 // Linux: KDE blurs behind the window along #app's rounded outline (inside the shadow margin), kept up to date.
@@ -242,12 +293,45 @@ function applyLanguage() {
   const search = document.getElementById("host-search");
   search.placeholder = t("search");
   invoke("set_labels", { labels: menuLabels() }).then(refreshMenubar).catch(() => {});
+  refreshChrome();
+}
+
+// ---------- iOS: SwiftUI title bar and key bar (native.js) ----------
+
+/** What they show; sent again by refreshChrome() whenever it changes. */
+function chromeState() {
+  const sync = document.getElementById("sync-status");
+  const item = (id, ic) => ({ id, l: t(id).replace(/…$/, ""), sf: SF[ic] });
+  return {
+    tabs: tabList(), sidebar: shown("sidebar"), panel: shown("right_panel"), compact: isPhone(),
+    typing: document.body.classList.contains("typing"), ctrl: ctrlOn(),
+    panelTab: panelTab(), panelTabs: PANEL_TABS.map(([k, ic]) => ({ id: k, l: t(k), sf: SF[ic] })),
+    panelMenu: panelActions().map((a, i) => ({ id: "panel:" + i, l: a.label, sf: SF[a.icon] })),
+    plus: [item("quick_connect", "terminal"), item("new_host", "plus"), item("new_folder", "folderPlus"), { sep: true },
+      item("split_right", "splitH"), item("split_down", "splitV"), item("clear_screen", "clear"), { sep: true },
+      item("import_hosts", "download"), item("export_hosts", "upload")],
+    sync: sync.hidden ? null : SF[sync.dataset.icon] || null, syncAlert: /warn|error/.test(sync.className),
+    tint: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#8C7CF0",
+    dark: document.documentElement.dataset.dark !== "0",
+    l: { sidebar: t("toggle_sidebar"), panel: t("toggle_panel"), settings: t("settings").replace(/…$/, ""), new_tab: t("new_tab"),
+      close_tab: t("close_tab"), sync: sync.title, panel_actions: t("panel_actions"), kb_hide: t("kb_hide") },
+  };
+}
+
+function nativeAction(id) {
+  const [kind, arg] = id.split(":");
+  if (kind === "tab") { selectTabAt(+arg); if (isPhone() && drawer) setLayout(drawer, false); }
+  else if (kind === "close_tab") closeTabAt(+arg);
+  else if (kind === "panel_tab") setPanelTab(arg);
+  else if (kind === "panel") panelActions()[+arg]?.action();
+  else if (id === "sync") document.getElementById("sync-status").click();
+  else ACTIONS[id]?.();
 }
 
 // ---------- settings ----------
 
-/** Linux windows are always transparent (CSS corners). */
-const isLinuxLike = () => S.platform === "linux";
+/** Linux windows are always transparent (CSS corners); iOS draws everything in the page: no restart needed. */
+const isLinuxLike = () => S.platform === "linux" || isIOS();
 
 async function openSettings(section = "general") {
   const s = structuredClone(S.settings);
@@ -355,21 +439,23 @@ async function openSettings(section = "general") {
     return { k, on, pick, el: h("div.toggle", {}, h("span", {}, label), h("div.inline", {}, pick, on)) };
   });
   const row = (label, input, hint) => h("label.toggle", {}, h("span", {}, label, hint && h("small", {}, hint)), input);
+  // iOS: no menu bar icon, background mode, instances or self-update (App Store / TestFlight), no SSH agents.
+  const desk = !isIOS();
   const pages = {
-    general: [t("set_general"), h("div.form-grid", {}, field(t("language"), f.language), field(t("channel"), f.update_channel)),
-      h("div.form-grid", {}, field(t("tray_hosts"), f.tray_hosts), field(t("tray_count"), f.tray_count)),
-      h("div.toggles", {},
+    general: [t("set_general"), h("div.form-grid", {}, field(t("language"), f.language), desk && field(t("channel"), f.update_channel)),
+      desk && h("div.form-grid", {}, field(t("tray_hosts"), f.tray_hosts), field(t("tray_count"), f.tray_count)),
+      desk && h("div.toggles", {},
         row(isMac() ? t("tray_mac") : t("tray_other"), f.tray_icon),
         row(t("background"), f.run_in_background),
         row(t("multi_instance"), f.multi_instance, t("multi_instance_hint")),
         row(t("auto_updates"), f.check_updates)),
-      h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => checkUpdate(true, f.update_channel.value) }, t("check_now")))],
+      desk && h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => checkUpdate(true, f.update_channel.value) }, t("check_now")))],
     appearance: [t("set_appearance"), h("div.form-grid", {}, field(t("theme"), f.theme), field(t("density"), f.density),
       h("div.span2", {}, field(t("ui_font"), f.ui_font)), field(t("size"), f.ui_font_size)),
       h("h4", {}, t("colors"), h("small.mute", {}, " — ", t("colors_hint"))), h("div.toggles", {}, ...colors.map((c) => c.el)),
-      h("h4", {}, t("win_title")),
+      h("h4", {}, desk ? t("win_title") : t("mat_liquid_glass")),
       h("div.form-grid", {},
-        field(t("material"), f.material, t("material_hint_" + (S.platform === "linux" && !isKde() ? "nokde" : S.platform))),
+        field(t(desk ? "material" : "material_ios"), f.material, t("material_hint_" + (S.platform === "linux" && !isKde() ? "nokde" : S.platform))),
         field(t("ui_opacity"), f.ui_opacity, t("ui_opacity_hint")))],
     terminal: [t("set_terminal"), h("div.form-grid", {},
       h("div.span2", {}, field(t("term_font"), f.font_family)),
@@ -389,13 +475,14 @@ async function openSettings(section = "general") {
       field(t("perf_probe"), f.probe_secs, t("perf_probe_hint")), field(t("perf_stats"), f.stats_secs)),
       h("div.toggles", {}, row(t("perf_gpu"), f.gpu, t("perf_gpu_hint")), row(t("perf_anim"), f.animations)),
       h("p.mute.small", {}, t("perf_scrollback_hint"))],
-    ssh: [t("set_ssh"), h("div.form-grid", {}, h("div.span2", {}, field(t("agent_socket"), f.agent_socket, t("agent_hint"))), agents,
+    ssh: [t("set_ssh"), h("div.form-grid", {}, desk && h("div.span2", {}, field(t("agent_socket"), f.agent_socket, t("agent_hint"))), agents,
       field(t("keepalive"), f.keepalive)),
-      h("h4", {}, t("agents_found")), found],
+      desk && h("h4", {}, t("agents_found")), desk && found],
     keys: [t("set_keys"), h("p.mute.small", {}, t("keys_hint")), h("div.kb-list", {}, ...kbRows)],
     sync: [t("set_sync"), syncView()],
     about: [t("set_about"), aboutView()],
   };
+  if (isIOS()) delete pages.keys; // recording a shortcut needs the page's key events, which a native sheet keeps
 
   const content = h("div.settings-content");
   const nav = h("nav.settings-nav", { role: "tablist", "aria-orientation": "vertical" });
@@ -450,7 +537,7 @@ function openAbout() {
 
 /** Shared by the About window (menu) and the About page of the settings. */
 function aboutView() {
-  const plat = { macos: "macOS", windows: "Windows", linux: "Linux" }[S.platform] || S.platform;
+  const plat = { macos: "macOS", windows: "Windows", linux: "Linux", ios: "iOS" }[S.platform] || S.platform;
   const ch = S.settings.behavior.update_channel;
   return h("div.about", {},
     h("img.about-icon", { src: appIcon, alt: "", width: 112, height: 112 }),
@@ -461,7 +548,7 @@ function aboutView() {
       h("dt", {}, t("platform")), h("dd.mono", {}, `${plat} · ${S.arch}`),
       h("dt", {}, t("config_dir")), h("dd.mono.wrap", {}, S.configDir)),
     h("div.about-actions", {},
-      h("button.btn.primary", { type: "button", onclick: () => checkUpdate(true) }, t("check_update").replace(/…$/, "")),
+      !isIOS() && h("button.btn.primary", { type: "button", onclick: () => checkUpdate(true) }, t("check_update").replace(/…$/, "")),
       h("button.btn", { type: "button", onclick: () => openUrl(REPO) }, t("github")),
       h("button.btn", { type: "button", onclick: () => openUrl(`${REPO}/releases`) }, t("release_notes"))),
     h("p.about-foot.mute.small", {}, t("built_with")));
@@ -494,6 +581,13 @@ async function boot() {
   document.body.dataset.platform = document.documentElement.dataset.platform = S.platform;
   document.documentElement.dataset.desktop = b.desktop;
   transparentAtLaunch = needsTransparentWindow(S.settings);
+  if (isIOS()) {
+    await initNative(chromeState, nativeAction, keyInput).catch((e) => console.error("native-ui", e));
+    // The key bar is shown above the keyboard while a terminal has it.
+    const typing = () => { document.body.classList.toggle("typing", !!document.activeElement?.closest(".xterm")); refreshChrome(); };
+    document.addEventListener("focusin", typing);
+    document.addEventListener("focusout", () => setTimeout(typing));
+  }
   initMenubar();
   for (const [id, name] of [["toggle-sidebar", "sidebar"], ["add-folder", "folderPlus"], ["add-host", "plus"], ["clear-term", "clear"], ["split-h", "splitH"], ["split-v", "splitV"], ["toggle-panel", "panel"], ["open-settings", "settings"]]) {
     document.getElementById(id).append(icon(name, 16));
@@ -516,8 +610,13 @@ async function boot() {
     });
   });
   applyLanguage();
-  initHosts(openHost);
+  // On a phone the host list covers the terminal: put it away once a host is opened.
+  initHosts((host, opts) => { openHost(host, opts); if (isPhone()) setLayout("sidebar", false); });
   initPanes();
+  if (isIOS()) {
+    // Touching the terminal puts the open drawer away.
+    document.getElementById("panes").addEventListener("touchstart", () => drawer && isPhone() && setLayout(drawer, false), { passive: true });
+  }
   initPanel();
   applyAppearance();
   // Show the window once the UI is built (it starts hidden with the theme background: no white flash).

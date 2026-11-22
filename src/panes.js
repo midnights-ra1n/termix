@@ -6,6 +6,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { S, h, icon, invoke, modal, field, toast, statusDot, uid, saveHosts, contextMenu } from "./ui.js";
 import { t as tr } from "./i18n.js";
+import { refreshChrome } from "./native.js";
 import { Suggest } from "./suggest.js";
 import logo from "../assets/icon-rounded.svg";
 
@@ -83,7 +84,7 @@ class Pane {
     if (S.settings.performance.gpu) this.gpu();
     // Shells and tmux send DECRST 12 (terminfo cnorm), which would stop the blink for good: the setting wins.
     for (const final of ["h", "l"]) term.parser.registerCsiHandler({ prefix: "?", final }, (p) => p.length === 1 && p[0] === 12);
-    term.onData((d) => invoke("ssh_write", { id: this.session, data: d }).catch(() => {}));
+    term.onData((d) => invoke("ssh_write", { id: this.session, data: withCtrl(d) }).catch(() => {}));
     term.onResize(({ cols, rows }) => invoke("ssh_resize", { id: this.session, cols, rows }).catch(() => {}));
     term.onSelectionChange(() => S.settings.terminal.copy_on_select && term.hasSelection() && navigator.clipboard.writeText(term.getSelection()));
     const id = this.session;
@@ -211,7 +212,13 @@ function render() {
   area.replaceChildren(current ? renderNode(current.root) : welcome());
   current && leaves(current.root).forEach((p) => p.el.classList.toggle("focused", p === current.focused));
   saveWorkspace();
+  refreshChrome();
 }
+
+/** iOS title bar (main.js): the tabs, and switching or closing one by its position. */
+export const tabList = () => tabs.map((t) => ({ l: t.title(), on: t === current }));
+export const selectTabAt = (i) => tabs[i] && selectTab(tabs[i]);
+export const closeTabAt = (i) => tabs[i] && closeTab(tabs[i]);
 
 // ---------- workspace: tabs, splits and tmux sessions, synced so another device can reopen them ----------
 
@@ -484,3 +491,29 @@ export const clearScreen = () => current?.focused?.clearScreen();
 
 listen("ssh-closed", (e) => bySession.get(e.payload)?.closed());
 export const initPanes = render;
+
+// ---------- iOS: the keys an on-screen keyboard lacks, in the bar above it (native-ui KeyBar) ----------
+
+let ctrl = false;
+export const ctrlOn = () => ctrl;
+/** Ctrl from the key bar applies to the next key typed: Ctrl+letter (and @ [ \ ] ^ _) is its control code. */
+function withCtrl(d) {
+  if (!ctrl || d.length !== 1) return d;
+  ctrl = false;
+  refreshChrome();
+  const c = d.toUpperCase().charCodeAt(0);
+  return c >= 64 && c <= 95 ? String.fromCharCode(c - 64) : d;
+}
+
+export function keyInput(key, text) {
+  if (key === "ctrl") { ctrl = !ctrl; return refreshChrome(); }
+  if (key === "hide") return document.activeElement?.blur();
+  const term = current?.focused?.term;
+  if (!term) return;
+  // vim, less… switch the arrows to "application" mode (ESC O A instead of ESC [ A).
+  const arrow = { left: "D", up: "A", down: "B", right: "C" }[key];
+  if (arrow) term.input((term.modes.applicationCursorKeysMode ? "\x1bO" : "\x1b[") + arrow);
+  else if (key === "paste") term.paste(text || "");
+  else if (key === "esc") term.input("\x1b");
+  else if (key === "tab") term.input("\t");
+}

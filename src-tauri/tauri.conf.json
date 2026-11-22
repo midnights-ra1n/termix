@@ -38,6 +38,7 @@
   },
   "bundle": {
     "active": true,
+    "iOS": { "minimumSystemVersion": "26.0" },
     "targets": "all",
     "createUpdaterArtifacts": true,
     "category": "DeveloperTool",

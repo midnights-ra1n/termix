@@ -1,9 +1,10 @@
 // Settings → Sync: server or local-network sync, the end-to-end encrypted vault and synced SSH keys.
 // Every action goes straight to the backend; nothing here waits for the settings "Save" button.
-import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { h, icon, invoke, field, toast, modal } from "./ui.js";
+import { h, icon, invoke, field, toast, modal, openDialog } from "./ui.js";
 import { t } from "./i18n.js";
+import { refreshChrome } from "./native.js";
 
 const when = (ms) => (ms ? new Date(ms).toLocaleString() : t("sync_never"));
 let shownCode = null; // { code, until }: survives redraws while it is valid
@@ -183,12 +184,14 @@ export function initSyncStatus(btn, openSync) {
   const render = (s) => {
     st = s;
     btn.hidden = s.mode === "off" || !s.mode;
+    refreshChrome(); // iOS shows it in the native title bar (main.js reads the button)
     if (btn.hidden) return;
     const [name, cls, text] = s.conflicts.length ? ["syncConflict", "warn", t("sync_n_conflicts", s.conflicts.length)]
       : s.syncing ? ["syncing", "", t("sync_running")]
       : s.last_error ? ["syncOff", "error", t("sync_error", s.last_error)]
       : ["syncOk", "", t("sync_last", when(s.last_ok))];
     btn.className = "icon-btn " + cls;
+    btn.dataset.icon = name;
     btn.replaceChildren(icon(name, 16));
     btn.title = text;
     btn.setAttribute("aria-label", text);

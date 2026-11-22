@@ -13,10 +13,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
-tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-process = "2"
-tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
@@ -28,6 +25,8 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "linux-
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
 tauri-plugin-opener = "2"
+# iOS chrome in SwiftUI (a no-op crate on the desktop).
+tauri-plugin-native-ui = { path = "plugins/native-ui" }
 sha2 = "0.10"
 hkdf = "0.12"
 rand = "0.8"
@@ -37,7 +36,6 @@ reqwest = { version = "0.13", features = ["json"] }
 mdns-sd = "0.22.0"
 aes-gcm = "0.10"
 pbkdf2 = { version = "0.12", features = ["hmac"] }
-tauri-plugin-single-instance = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 
 # PBKDF2 (600 000 rounds) is unbearably slow unoptimised: keep it fast in dev builds too.
@@ -54,6 +52,13 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.png]
 opt-level = 3
+
+# Desktop only: iOS updates come from the App Store / TestFlight, and it has one window, no instances to merge.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-single-instance = "2"
 
 [target."cfg(windows)".dependencies]
 windows-registry = "0.6"

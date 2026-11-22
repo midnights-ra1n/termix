@@ -34,6 +34,7 @@ Rust (Tauri v2, russh) and xterm.js. No telemetry, no account required.</p>
 - **Sync**: hosts, folders, settings, passwords, SSH keys and open tabs between your devices, through a self-hosted server or directly on the local network. Passwords and keys are end-to-end encrypted
 - **Customization**: 24 built-in themes plus your own, 11 bundled fonts (5 sans for the interface, 6 mono for the terminal) or any installed one, accent color, density, cursor, padding, letter spacing, everything from the GUI or a TOML file
 - **Desktop integration**: native macOS menu bar (same menus in the custom title bar on Windows and Linux, with Windows-style window buttons and the system's rounded corners), tray icon that turns white or black to match the panel, native tray menu on macOS, GNOME, KDE and Windows with your hosts one click away, optional background mode for instant reopening, native Wayland
+- **iPhone and iPad**: the same app, themes and settings, with a native SwiftUI interface in Liquid Glass (title bar, menus, settings and editors, notifications), the host list and the side panel as drawers on the phone, a key bar (Esc, Tab, Ctrl, arrows, paste) above the keyboard and long press for the context menus
 - **Updates**: automatic and manual, from GitHub releases, on the stable, beta or nightly channel
 - **Languages**: English, French, Spanish, German
 
@@ -46,6 +47,7 @@ Download the build for your system from the [releases page](https://github.com/m
 | macOS 11+ | `.dmg` | Apple silicon, Intel |
 | Windows 10+ | `-setup.exe` | x64, arm64 |
 | Linux | `.deb`, `.rpm`, `.AppImage` | x86_64, aarch64 |
+| iOS / iPadOS 26+ | built from source with Xcode (see [iPhone and iPad](#iphone-and-ipad)) | arm64 |
 
 **macOS**: the app is not notarized. The first time, right-click Termix in Applications and choose Open, or run:
 
@@ -295,10 +297,23 @@ node scripts/check-i18n.mjs                            # every language has ever
 
 | Path | |
 |---|---|
-| `src/` | interface (vanilla JS, xterm.js) |
+| `src/` | interface (vanilla JS, xterm.js), shared by the desktop and iOS |
 | `src-tauri/src/` | app backend: SSH (`ssh.rs`), settings (`config.rs`), sync (`sync.rs`, `syncd.rs`, `p2p.rs`) |
 | `sync-server/` | `termix-sync` server and its web interface |
 | `docs/` | configuration reference |
+| `src-tauri/gen/apple/` | iOS Xcode project (`Info.plist`, launch screen, icons) |
+| `src-tauri/plugins/native-ui/` | iOS interface in SwiftUI (title bar, key bar, menus, sheets, toasts), driven by `src/native.js` |
+
+### iPhone and iPad
+
+The iOS app is the same Tauri project. The terminal and the lists stay in the page (`src/`); the chrome is SwiftUI with Liquid Glass (`src-tauri/plugins/native-ui`): title bar, key bar, menus, toasts, and every dialog. Dialogs are still built by the shared code: `src/native.js` turns their form into a native sheet (pickers, sliders, switches, fields) and writes what the user changes back into it, so a setting added for the desktop shows up on iOS too. What only makes sense on a computer (menu bar, tray icon, background mode, self-update, SSH agents, shortcut editing) is left out. iOS 26 or later. Extra requirements: Xcode, `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`, `brew install xcodegen cocoapods`.
+
+```sh
+pnpm tauri ios dev "iPhone 17"                          # simulator (or a plugged-in device)
+pnpm tauri ios build --export-method debugging         # .ipa signed with your team (APPLE_DEVELOPMENT_TEAM)
+```
+
+Updates come from a new build (Xcode, TestFlight), not from GitHub releases. SFTP downloads and host exports land in the Files app › Termix. Local network discovery for peer-to-peer sync needs Apple's multicast entitlement (`com.apple.developer.networking.multicast`) on a real device; sync through a server works without it.
 
 ## Branches and releases
 

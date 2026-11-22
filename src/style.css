@@ -391,3 +391,37 @@ input.switch:checked::after { transform: translateX(16px); background: var(--onA
 .welcome .recent-title { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--faint); padding: 0 12px 6px; }
 .welcome .recent .row { width: 100%; }
 .welcome .recent .mute { font-size: 12px; }
+
+/* ---------- iOS / iPadOS ---------- */
+/* The chrome is SwiftUI (src-tauri/plugins/native-ui): its title bar floats over the 44 px below the status bar;
+   menus, dialogs, toasts and the keys above the keyboard are native too. The page stays dense. */
+html[data-platform="ios"] { --row: 32px; -webkit-tap-highlight-color: transparent; }
+html[data-platform="ios"] body { padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); -webkit-touch-callout: none; }
+html[data-platform="ios"] body.kb-open { padding-bottom: 0; }
+html.native #titlebar, .backdrop.native { display: none; }
+html.native #app { box-sizing: border-box; height: 100%; grid-template-rows: minmax(0, 1fr); padding-top: calc(env(safe-area-inset-top) + 44px); }
+/* File actions are in the long-press menu, the SFTP bar's in the title bar's "…" menu. Touch has no hover. */
+html.native :is(.files li > .icon-btn, .sftp-bar > .icon-btn) { display: none; }
+@media (hover: none) { .item .icon-btn { opacity: 1; } }
+
+/* iPhone: one column; hosts and the side panel slide in as drawers over the terminal (main.js). */
+body.phone #app { grid-template-columns: minmax(0, 1fr); }
+body.phone :is(#sidebar, #panes, #panel) { grid-row: 1; grid-column: 1; }
+body.phone :is(#sidebar, #panel) { z-index: 3; width: min(86vw, 340px); border: 1px solid var(--brume); box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .6); transition: transform .35s var(--ease), visibility .35s; }
+body.phone #sidebar { justify-self: start; border-left: 0; border-radius: 0 20px 20px 0; }
+body.phone #panel { justify-self: end; border-right: 0; border-radius: 20px 0 0 20px; }
+body.phone.no-sidebar #sidebar { transform: translateX(-105%); visibility: hidden; }
+body.phone.no-panel #panel { transform: translateX(105%); visibility: hidden; }
+body.phone .edge { display: none; }
+
+/* Liquid Glass (Appearance): nothing is behind a full-screen app, so the backdrop comes from the theme's
+   colours, the side panels are tinted over it at --ui-op (as on the desktop) and frosted. */
+html[data-platform="ios"] body.material {
+  background: radial-gradient(90% 60% at 0% 0%, color-mix(in srgb, var(--accent) 50%, transparent), transparent 70%),
+    radial-gradient(80% 60% at 100% 100%, color-mix(in srgb, var(--accent2) 42%, transparent), transparent 70%), var(--vide) !important;
+}
+body.phone.material :is(#sidebar, #panel) {
+  background: color-mix(in srgb, var(--scene) var(--ui-op, 75%), transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #FFFFFF 22%, transparent), inset 0 0 0 1px color-mix(in srgb, #FFFFFF 6%, transparent), 0 24px 48px -20px rgba(0, 0, 0, .55);
+}

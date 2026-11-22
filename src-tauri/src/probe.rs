@@ -56,6 +56,7 @@ pub async fn probe_all(hosts: &[Host]) -> HashMap<String, String> {
 }
 
 /// Small filled circle for native menu items.
+#[cfg(desktop)]
 pub fn dot(status: &str) -> tauri::image::Image<'static> {
     let (r, g, b) = match status {
         "up" => (0x34, 0xC7, 0x59),

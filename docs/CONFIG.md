@@ -79,7 +79,8 @@ background_image_y = "center"    # top, center, bottom
 
 [window]                     # propre à cet appareil, jamais synchronisé (chaque système a ses matériaux)
 material = "none"            # none ; macOS : vibrancy, liquid_glass (macOS 26+, vibrancy avant) ;
-                             # Windows : acrylic, mica (Windows 11, acrylic sous Windows 10) ; Linux : blur (KDE Plasma)
+                             # Windows : acrylic, mica (Windows 11, acrylic sous Windows 10) ; Linux : blur (KDE Plasma) ;
+                             # iOS : liquid_glass (verre dessiné par Termix sur un fond aux couleurs du thème)
 interface_opacity = 75       # opacité des barres latérales et de la barre de titre par-dessus le matériau (20 à 100)
                              # (macOS / Windows : la fenêtre devient transparente au prochain lancement)
 

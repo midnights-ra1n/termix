@@ -9,12 +9,12 @@
     "core:window:allow-start-dragging",
     "core:window:allow-start-resize-dragging",
     "dialog:default",
-    "process:default",
     "core:window:allow-toggle-maximize",
     "core:window:allow-minimize",
     "core:window:allow-close",
     "core:window:allow-set-fullscreen",
     "core:window:allow-internal-toggle-maximize",
-    "opener:default"
+    "opener:default",
+    "native-ui:default"
   ]
 }

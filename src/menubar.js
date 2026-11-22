@@ -43,7 +43,7 @@ const titles = () => [...menus.children];
 const items = () => [...bar.querySelectorAll(".mb-item")];
 
 export function initMenubar() {
-  if (document.body.dataset.platform === "macos") return;
+  if (["macos", "ios"].includes(document.body.dataset.platform)) return; // native menu bar / a full-screen app: no window controls
   const keep = { onmousedown: (e) => e.preventDefault() }; // clicking a menu leaves the focus in the terminal
   menus = h("div.mb-menus", { ...keep, role: "menubar" });
   const max = h("button", { ...keep, type: "button", onclick: () => win.toggleMaximize() }, glyph("max"), glyph("restore"));

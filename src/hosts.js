@@ -1,6 +1,6 @@
 // Sidebar: host tree (nested folders, drag & drop), search, tags, status dots, editor, import/export.
-import { open as openDialog, save as saveDialog, confirm } from "@tauri-apps/plugin-dialog";
-import { S, h, icon, invoke, modal, field, uid, toast, saveHosts, statusDot, HOST_ICONS, contextMenu } from "./ui.js";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { S, h, icon, invoke, modal, field, uid, toast, saveHosts, statusDot, HOST_ICONS, contextMenu, openDialog, saveDialog, isIOS } from "./ui.js";
 import { t } from "./i18n.js";
 import { wantsTmux } from "./panes.js";
 
@@ -88,6 +88,7 @@ function dropTarget(el, folderId) {
 }
 
 function draggable(el, payload) {
+  if (isIOS()) return; // a long press opens the menu there (main.js); the editor's Folder field moves hosts
   el.draggable = true;
   el.addEventListener("dragstart", (e) => {
     e.dataTransfer.setData("text/plain", payload);
@@ -234,7 +235,7 @@ export async function editHost(x = null, folder = null) {
   const ok = await modal(isNew ? t("host_new") : t("host_edit"), (close) => h("form.grid", { onsubmit: (e) => { e.preventDefault(); close(true); } },
     field(t("f_name"), f.name), field(t("f_host"), f.host),
     field(t("f_user"), f.user), field(t("f_port"), f.port),
-    h("div.span2", {}, field(t("f_key"), h("div.inline", {}, f.key_path, browse, importBtn), t("f_key_hint"))),
+    h("div.span2", {}, field(t("f_key"), h("div.inline", {}, f.key_path, !isIOS() && browse, importBtn), t("f_key_hint"))),
     vaultKeys.length ? h("div.span2", {}, field(t("f_vault_key"), f.key_id, t("f_vault_key_hint"))) : null,
     field(t("f_password"), f.password, t("f_password_hint")), field(t("f_passphrase"), f.passphrase),
     h("div.span2", {}, field(t("f_desc"), f.description)),

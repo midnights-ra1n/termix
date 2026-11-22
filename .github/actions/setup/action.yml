@@ -16,7 +16,7 @@ runs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
-        targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+        targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin,aarch64-apple-ios' || '' }}
     - uses: swatinem/rust-cache@v2
       with:
         workspaces: src-tauri
