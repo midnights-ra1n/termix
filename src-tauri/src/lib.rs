@@ -16,8 +16,11 @@ use tauri::menu::{IconMenuItem, Menu, MenuBuilder, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 const REPO: &str = "midnights-ra1n/termix";
+// Visibility and decorations stay ours (hidden until the UI is ready, custom title bar).
+const WINDOW_STATE: StateFlags = StateFlags::SIZE.union(StateFlags::POSITION).union(StateFlags::MAXIMIZED);
 
 struct AppState {
     settings: Mutex<Settings>,
@@ -743,6 +746,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_window_state::Builder::new().with_state_flags(WINDOW_STATE).build())
         .manage(AppState {
             settings: Mutex::new(settings.clone()),
             sessions: Default::default(),
@@ -808,6 +812,8 @@ pub fn run() {
                 refresh_tray(w.app_handle(), &HostsDoc::load());
             }
             if let WindowEvent::CloseRequested { api, .. } = ev {
+                // The plugin only writes on exit, which a hidden background app may never reach (logout, kill).
+                let _ = w.app_handle().save_window_state(WINDOW_STATE);
                 let st = w.state::<AppState>();
                 let b = &st.settings.lock().unwrap().behavior;
                 // Without a tray icon there is no way back to a hidden window on Linux/Windows, so quit there.
