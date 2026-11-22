@@ -424,12 +424,20 @@ fn install_pkg(bytes: &[u8], cmd: &[&str]) -> R<()> {
     let ext = if cmd[0] == "rpm" { "rpm" } else { "deb" };
     let path = std::env::temp_dir().join(format!("termix-update-{}.{ext}", uuid::Uuid::new_v4()));
     std::fs::write(&path, bytes).map_err(e)?;
-    let status = std::process::Command::new("pkexec").args(cmd).arg(&path).status();
+    let run = |prog: &str, pre: &[&str]| std::process::Command::new(prog).args(pre).args(cmd).arg(&path).output();
+    // pkexec is a separate package not installed by default on openSUSE: systemd-run asks the same polkit agent.
+    let out = run("pkexec", &[]).or_else(|err| match err.kind() {
+        std::io::ErrorKind::NotFound => run("systemd-run", &["--quiet", "--wait", "--pipe", "--collect"]),
+        _ => Err(err),
+    });
     let _ = std::fs::remove_file(&path);
-    match status.map_err(|err| format!("pkexec introuvable : {err}"))?.code() {
+    let out = out.map_err(|err| format!("ni pkexec ni systemd-run disponible : {err}"))?;
+    // rpm/dpkg say why on stderr (unsigned package, missing dependency, conflict…)
+    let why: String = String::from_utf8_lossy(&out.stderr).split_whitespace().collect::<Vec<_>>().join(" ").chars().take(300).collect();
+    match out.status.code() {
         Some(0) => Ok(()),
         Some(126) | Some(127) => Err("installation annulée (authentification refusée)".into()),
-        c => Err(format!("échec de l'installation ({} {}, code {c:?})", cmd[0], cmd[1]).into()),
+        c => Err(format!("échec de l'installation ({} {}, code {}) : {why}", cmd[0], cmd[1], c.unwrap_or(-1))),
     }
 }
 

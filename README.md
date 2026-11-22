@@ -53,7 +53,17 @@ Download the build for your system from the [releases page](https://github.com/m
 xattr -dr com.apple.quarantine /Applications/Termix.app
 ```
 
-**Linux**: the tray icon on GNOME needs the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/). Termix runs natively on Wayland.
+**Linux**: install the package with your package manager (the `.rpm` is not GPG-signed; updates are checked with Termix's own signature instead):
+
+```sh
+sudo apt install ./Termix_*_amd64.deb                              # Debian, Ubuntu
+sudo dnf install ./Termix-*.x86_64.rpm                             # Fedora, RHEL, Alma, Rocky
+sudo zypper install --allow-unsigned-rpm ./Termix-*.x86_64.rpm     # openSUSE Tumbleweed, Leap 15.6+
+```
+
+Updates of a `.deb` or `.rpm` install ask for your password through polkit (`pkexec`, or `systemd-run` where `pkexec` is not installed, as on openSUSE).
+
+The tray icon on GNOME needs the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/). Termix runs natively on Wayland.
 
 Termix checks for updates at launch and once a day, then asks before installing. Choose the channel in Settings → General.
 
