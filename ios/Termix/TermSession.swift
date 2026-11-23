@@ -13,6 +13,8 @@ final class TermSession: Identifiable {
     let tmux: String?
     var phase: Phase = .connecting
     var askPassword = false
+    /// Server stats of the panel, kept across its tabs.
+    let stats = StatsFeed()
     /// The connection was lost (rather than ended by the server): it comes back on its own.
     @ObservationIgnored private(set) var dropped = false
     /// The core's id for the current connection: new on each reconnect, so a late event of the old one can't hit it.

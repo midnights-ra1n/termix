@@ -47,6 +47,7 @@ struct TerminalScreen: View {
                 ServerPanel(session: session)
                     .inspectorColumnWidth(min: 300, ideal: 360, max: 480)
                     .presentationDetents([.medium, .large])
+                    .presentationBackground(Color(model.theme.bg))
             }
             .alert("Mot de passe", isPresented: $session.askPassword) {
                 SecureField("Mot de passe", text: $password)

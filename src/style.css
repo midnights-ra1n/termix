@@ -11,6 +11,8 @@
   --ease: cubic-bezier(.16, 1, .3, 1);
   --sw: 248px; --pw: 300px; --bar: 46px; --ctl: 36px;
   --tl-min: 52px;
+  /* Field outlines: 3:1 against bg and scene in every built-in theme (WCAG 1.4.11); --brume alone is 1.3-2.2:1. */
+  --edge: color-mix(in srgb, var(--ink) 55%, var(--brume));
   color-scheme: dark;
 }
 :root[data-dark="0"] { color-scheme: light; --st-up: #16A34A; --st-ping: #CA8A04; --st-down: #DC2626; }
@@ -119,7 +121,7 @@ html[data-platform="linux"] body.maximized #app, html[data-platform="linux"] bod
 
 /* ---------- sidebar ---------- */
 .search { padding: 12px 12px 8px; }
-.search input { width: 100%; height: var(--ctl); padding: 0 14px; border-radius: 10px; border: 1px solid var(--brume); background: var(--bg); }
+.search input { width: 100%; height: var(--ctl); padding: 0 14px; border-radius: 10px; border: 1px solid var(--edge); background: var(--bg); }
 .search input::placeholder { color: var(--faint); }
 #tag-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px 8px; }
 #tag-bar:empty { display: none; }
@@ -218,7 +220,7 @@ body:not(.focus-single) #panes > .pane.focused { border-color: transparent; }
 .font-picker { display: flex; flex-direction: column; gap: 6px; }
 .picker { margin: auto; width: min(400px, 90%); display: flex; flex-direction: column; gap: 12px; }
 .picker h3 { margin: 0; font: 500 14px var(--ui-font); }
-.picker input { height: var(--ctl); padding: 0 12px; border-radius: 10px; border: 1px solid var(--brume); background: var(--scene); }
+.picker input { height: var(--ctl); padding: 0 12px; border-radius: 10px; border: 1px solid var(--edge); background: var(--scene); }
 .picker-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow: auto; }
 .picker-list .mute { font-size: 12px; }
 .connecting { margin: auto; display: flex; gap: 8px; align-items: center; color: var(--mute); }
@@ -256,7 +258,7 @@ body:not(.focus-single) #panes > .pane.focused { border-color: transparent; }
 .tile { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 14px; background: var(--bg); font-size: 12px; }
 .tile .mono { font-size: 12px; }
 .sftp-bar { display: flex; gap: 2px; align-items: center; }
-.sftp-bar .path { flex: 1; min-width: 0; height: 32px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--brume); background: var(--bg); font: 500 12px var(--mono); }
+.sftp-bar .path { flex: 1; min-width: 0; height: 32px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--edge); background: var(--bg); font: 500 12px var(--mono); }
 .files { list-style: none; margin: 0 -4px; padding: 0; }
 .files li { display: flex; align-items: center; }
 .files li .icon-btn { width: 28px; height: 28px; opacity: 0; }
@@ -290,8 +292,8 @@ body:not(.focus-single) #panes > .pane.focused { border-color: transparent; }
 .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; min-width: 0; }
 .field > span { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--mute); }
 .field small { color: var(--faint); font-size: 12px; }
-.field input:not([type="checkbox"]), .field select, .field textarea {
-  width: 100%; height: var(--ctl); padding: 0 12px; border-radius: 10px; border: 1px solid var(--brume); background: var(--bg); outline-offset: 1px;
+.field input:not([type="checkbox"]):not([type="range"]), .field select, .field textarea {
+  width: 100%; height: var(--ctl); padding: 0 12px; border-radius: 10px; border: 1px solid var(--edge); background: var(--bg); outline-offset: 1px;
 }
 .field textarea { height: auto; min-height: 64px; padding: 8px 12px; resize: vertical; }
 .field select { appearance: none; -webkit-appearance: none; padding-right: 32px;
@@ -303,7 +305,7 @@ body:not(.focus-single) #panes > .pane.focused { border-color: transparent; }
 .inline { display: flex; gap: 8px; align-items: center; }
 .inline input { flex: 1; }
 .check { display: flex; align-items: center; gap: 8px; margin: 8px 0 16px; }
-input.color { width: 32px; height: 24px; padding: 0; border: 1px solid var(--brume); border-radius: 6px; background: none; cursor: pointer; }
+input.color { width: 32px; height: 24px; padding: 0; border: 1px solid var(--edge); border-radius: 6px; background: none; cursor: pointer; }
 input.color::-webkit-color-swatch-wrapper { padding: 2px; }
 input.color::-webkit-color-swatch { border: 0; border-radius: 4px; }
 .check input { width: 16px; height: 16px; accent-color: var(--accent); }
@@ -376,6 +378,17 @@ input.switch:checked::after { transform: translateX(16px); background: var(--onA
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* "Increase contrast" (macOS) / high contrast: every outline and separator at 3:1, switches readable when off. */
+@media (prefers-contrast: more) {
+  #sidebar, #panel, #titlebar, .tb-left, .tb-right, #menubar, .mb-drop, .suggest-list, .modal, .settings-nav, .settings-modal footer,
+  .toggles .toggle + .toggle, .btn:not(.primary):not(.ghost), .chip:not(.on), .kbd:not(.rec), .icon-choice:not(.on), .agent,
+  .split .pane:not(.focused), .pane.focused:not(:focus-within) { border-color: var(--edge); }
+  input.switch:not(:checked) { background: var(--edge); }
+  input.switch:not(:checked)::after { background: var(--bg); }
+}
+/* System "Reduce transparency" (macOS, Windows; set from main.js): nothing of the desktop shows through,
+   window material and see-through terminal included (a background image stays). */
+html:has(body.reduce-transparency), body.reduce-transparency, body.reduce-transparency #app { background: var(--bg) !important; }
 
 /* Settings → Sync */
 .sync-box { display: grid; gap: 8px; margin-top: 16px; }

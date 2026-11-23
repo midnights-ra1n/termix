@@ -22,43 +22,46 @@ struct HostsView: View {
     var body: some View {
         @Bindable var model = model
         List {
-            if !model.sessions.isEmpty {
-                Section("Sessions") {
-                    ForEach(model.sessions) { s in SessionRow(session: s) }
+            ThemedRows {
+                if !model.sessions.isEmpty {
+                    Section("Sessions") {
+                        ForEach(model.sessions) { s in SessionRow(session: s) }
+                    }
                 }
-            }
-            if let filtered {
-                Section { ForEach(filtered) { HostRow(host: $0) } }
-            } else {
-                // The computer's open tabs (with their tmux sessions), to carry on here.
-                if !model.workspaces.isEmpty {
-                    Section("Sur vos autres appareils") {
-                        ForEach(model.workspaces) { ws in
-                            Button { model.open(ws) } label: {
-                                Label {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("Reprendre les sessions de \(ws.name)").foregroundStyle(.primary)
-                                        Text(ws.panes.compactMap { p in model.doc.hosts.first { $0.id == p.host }?.title }.joined(separator: ", "))
-                                            .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                if let filtered {
+                    Section { ForEach(filtered) { HostRow(host: $0) } }
+                } else {
+                    // The computer's open tabs (with their tmux sessions), to carry on here.
+                    if !model.workspaces.isEmpty {
+                        Section("Sur vos autres appareils") {
+                            ForEach(model.workspaces) { ws in
+                                Button { model.open(ws) } label: {
+                                    Label {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text("Reprendre les sessions de \(ws.name)").foregroundStyle(.primary)
+                                            Text(ws.panes.compactMap { p in model.doc.hosts.first { $0.id == p.host }?.title }.joined(separator: ", "))
+                                                .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                                        }
+                                    } icon: {
+                                        Image(systemName: "macbook.and.iphone")
                                     }
-                                } icon: {
-                                    Image(systemName: "macbook.and.iphone")
                                 }
                             }
                         }
                     }
+                    let recent = Array(model.recentHosts.prefix(3))
+                    if !recent.isEmpty {
+                        Section("Récents") { ForEach(recent) { HostRow(host: $0) } }
+                    }
+                    let favorites = model.doc.hosts.filter(\.favorite)
+                    if !favorites.isEmpty {
+                        Section("Favoris") { ForEach(favorites) { HostRow(host: $0) } }
+                    }
+                    Section("Hôtes") { FolderContent(parent: nil) }
                 }
-                let recent = Array(model.recentHosts.prefix(3))
-                if !recent.isEmpty {
-                    Section("Récents") { ForEach(recent) { HostRow(host: $0) } }
-                }
-                let favorites = model.doc.hosts.filter(\.favorite)
-                if !favorites.isEmpty {
-                    Section("Favoris") { ForEach(favorites) { HostRow(host: $0) } }
-                }
-                Section("Hôtes") { FolderContent(parent: nil) }
             }
         }
+        .themedBackground()
         .overlay {
             if model.doc.hosts.isEmpty && model.doc.folders.isEmpty {
                 ContentUnavailableView {
@@ -296,25 +299,28 @@ struct QuickConnectView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    TextField("utilisateur@exemple.fr:22", text: $spec)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onSubmit(connect)
-                } footer: {
-                    Text("L'utilisateur et le port sont facultatifs.")
-                }
-                Section {
-                    Toggle("Enregistrer dans mes hôtes", isOn: $save)
-                }
-                let recent = model.recentHosts.filter(\.isQuick)
-                if !recent.isEmpty {
-                    Section("Récentes") {
-                        ForEach(recent) { h in Button(h.name) { spec = h.name } }
+                ThemedRows {
+                    Section {
+                        TextField("utilisateur@exemple.fr:22", text: $spec)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .onSubmit(connect)
+                    } footer: {
+                        Text("L'utilisateur et le port sont facultatifs.")
+                    }
+                    Section {
+                        Toggle("Enregistrer dans mes hôtes", isOn: $save)
+                    }
+                    let recent = model.recentHosts.filter(\.isQuick)
+                    if !recent.isEmpty {
+                        Section("Récentes") {
+                            ForEach(recent) { h in Button(h.name) { spec = h.name } }
+                        }
                     }
                 }
             }
+            .themedBackground()
             .navigationTitle("Connexion rapide")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

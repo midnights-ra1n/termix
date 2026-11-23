@@ -70,6 +70,8 @@ private struct RootView: View {
                 } actions: {
                     Button("Connexion rapide…") { model.quickConnect = true }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(theme.bg))
             }
         }
         .tint(theme.tint.map { Color($0) })

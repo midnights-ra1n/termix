@@ -67,9 +67,9 @@ padding = 8                  # marge intérieure des terminaux, en px
 bold_is_bright = false       # texte gras dans les couleurs ANSI vives
 focus_single = false         # bordure de focus aussi quand l'onglet n'a qu'une session (toujours visible une fois divisé)
 focus_width = 2              # épaisseur de la bordure de focus, en px (1 à 6)
-background_opacity = 100     # opacité du fond (0 à 100) ; en dessous de 100, l'image ou le bureau apparaît derrière le texte
+background_opacity = 100     # opacité du fond (30 à 100, en dessous le texte devient illisible) ; en dessous de 100, l'image ou le bureau apparaît derrière le texte
                              # (macOS / Windows : la fenêtre devient transparente au prochain lancement)
-background_blur = 0          # flou de l'image, en px (le flou du bureau, c'est [window] material)
+background_blur = 0          # flou de l'image, en px ; sans image, > 0 floute le bureau (flou du système, prioritaire sur liquid_glass)
 background_image = ""        # image choisie dans les Réglages : "<empreinte>.jpg", copiée dans backgrounds/ et synchronisée ;
                              # ou un chemin sur cette machine (png, jpg, webp, gif, avif, bmp ; 40 Mo max), non synchronisé.
                              # Vide = aucune. Au-delà de 2 Mo, l'image est réduite (JPEG, 4K au plus).
@@ -81,7 +81,7 @@ background_image_y = "center"    # top, center, bottom
 [window]                     # propre à cet appareil, jamais synchronisé (chaque système a ses matériaux)
 material = "none"            # none ; macOS : vibrancy, liquid_glass (macOS 26+, vibrancy avant) ;
                              # Windows : acrylic, mica (Windows 11, acrylic sous Windows 10) ; Linux : blur (KDE Plasma)
-interface_opacity = 75       # opacité des barres latérales et de la barre de titre par-dessus le matériau (20 à 100)
+interface_opacity = 75       # opacité des barres latérales et de la barre de titre par-dessus le matériau (40 à 100) ; « Réduire la transparence » du système rend tout opaque
                              # (macOS / Windows : la fenêtre devient transparente au prochain lancement)
 
 [performance]                # propre à cet appareil, jamais synchronisé

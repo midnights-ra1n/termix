@@ -94,7 +94,16 @@ fn apply_effects(w: &tauri::WebviewWindow, s: &Settings) {
     if cfg!(target_os = "linux") {
         return;
     }
-    let effects = match s.window.active() {
+    let t = &s.terminal;
+    // Terminal → Background → Blur without an image blurs the desktop, which only the system can do.
+    let blur_desktop = t.background_opacity < 100 && t.background_image.is_empty() && t.background_blur > 0;
+    let material = match s.window.active() {
+        // NSGlassEffectView leaves what is behind the window sharp: the classic material blurs it.
+        Some("liquid_glass") if blur_desktop => Some("vibrancy"),
+        None if blur_desktop => Some(if cfg!(windows) { "acrylic" } else { "vibrancy" }),
+        m => m,
+    };
+    let effects = match material {
         Some("vibrancy") => vec![E::HudWindow],
         // macOS 26+; Tauri falls back to the next one (classic vibrancy) on macOS 15 and older.
         Some("liquid_glass") => vec![E::LiquidGlassRegular, E::HudWindow],
@@ -120,6 +129,20 @@ fn windows_11() -> bool {
 }
 #[cfg(not(windows))]
 fn windows_11() -> bool {
+    false
+}
+
+/// System setting "Reduce transparency" (macOS) / transparency effects off (Windows): the UI then draws opaque.
+#[tauri::command]
+fn reduce_transparency() -> bool {
+    #[cfg(target_os = "macos")]
+    return objc2_app_kit::NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceTransparency();
+    #[cfg(windows)]
+    return windows_registry::CURRENT_USER
+        .open(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        .and_then(|k| k.get_u32("EnableTransparency"))
+        .is_ok_and(|v| v == 0);
+    #[allow(unreachable_code)]
     false
 }
 
@@ -775,9 +798,10 @@ pub fn run() {
                     wc.background_color = None;
                 }
             }
-            // See-through terminal or window material: Linux windows are always transparent; macOS / Windows
-            // only when asked, since it is decided at creation (changing it needs a restart).
-            if wants_transparent_window(&settings) {
+            // See-through terminal or window material: decided at creation. Linux and macOS windows are always
+            // transparent (the page paints its own background), so changes apply live; Windows only when asked,
+            // to keep ClearType text (changing it there needs a restart).
+            if cfg!(target_os = "macos") || wants_transparent_window(&settings) {
                 wc.transparent = true;
                 wc.background_color = None;
             }
@@ -831,7 +855,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            read_image, import_background, window_blur, boot, app_ready, set_labels, get_menu, menu_click, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents,
+            read_image, import_background, window_blur, reduce_transparency, boot, app_ready, set_labels, get_menu, menu_click, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents,
             ssh_connect, recent_sessions, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
             check_update, install_update,

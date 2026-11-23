@@ -463,7 +463,7 @@ function applyBackground() {
   const t = S.settings.terminal, r = document.documentElement.style;
   const [size, repeat] = FIT[t.background_image_fit] || FIT.cover;
   document.body.classList.toggle("see-through", customBg());
-  r.setProperty("--term-op", Math.min(100, t.background_opacity) + "%");
+  r.setProperty("--term-op", Math.min(100, Math.max(30, t.background_opacity)) + "%"); // floor: text stays readable (config.toml may say less)
   r.setProperty("--term-blur", t.background_blur + "px");
   r.setProperty("--term-img-op", t.background_image_opacity / 100);
   r.setProperty("--term-img-size", size);

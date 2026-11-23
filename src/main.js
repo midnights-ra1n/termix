@@ -198,8 +198,10 @@ function applyAppearance() {
 const MATERIALS = { macos: ["vibrancy", "liquid_glass"], windows: ["acrylic", "mica"], linux: ["blur"] };
 const isKde = () => /KDE/i.test(document.documentElement.dataset.desktop || "");
 const materialOn = (s = S.settings) => (MATERIALS[S.platform] || []).includes(s.window.material) && (S.platform !== "linux" || isKde());
-/** macOS / Windows windows are transparent only if created so (Linux always is): a change needs a restart. */
-const needsTransparentWindow = (s) => S.platform === "linux" || s.terminal.background_opacity < 100 || materialOn(s);
+/** Terminal → Background → Blur without an image blurs the desktop (system blur, see apply_effects in lib.rs). */
+const blurDesktop = (s = S.settings) => s.terminal.background_opacity < 100 && !s.terminal.background_image && s.terminal.background_blur > 0;
+/** Windows windows are transparent only if created so (macOS and Linux always are): a change needs a restart there. */
+const needsTransparentWindow = (s) => S.platform !== "windows" || s.terminal.background_opacity < 100 || materialOn(s);
 let transparentAtLaunch = true;
 
 // Linux: KDE blurs behind the window along #app's rounded outline (inside the shadow margin), kept up to date.
@@ -211,13 +213,17 @@ const blurSend = () => {
 // Hidden then shown again (run in background): GTK gives the window a new surface, without the blur.
 addEventListener("focus", () => blurObs && blurSend());
 document.addEventListener("visibilitychange", () => blurObs && !document.hidden && blurSend());
+// System "Reduce transparency": WKWebView has no media query for it, so ask the system (style.css draws opaque).
+const syncTransparency = () => invoke("reduce_transparency").then((on) => document.body.classList.toggle("reduce-transparency", on), () => {});
+addEventListener("focus", syncTransparency); // changed in System Settings while the app was in the background
 
 function applyMaterial() {
   const on = materialOn();
   document.body.classList.toggle("material", on);
-  document.documentElement.style.setProperty("--ui-op", S.settings.window.interface_opacity + "%");
-  if (S.platform !== "linux" || on === !!blurObs) return;
-  if (on) {
+  document.documentElement.style.setProperty("--ui-op", Math.min(100, Math.max(40, S.settings.window.interface_opacity)) + "%"); // floor: sidebar text stays readable
+  const blur = S.platform === "linux" && isKde() && (on || blurDesktop());
+  if (S.platform !== "linux" || blur === !!blurObs) return;
+  if (blur) {
     blurObs = new ResizeObserver(() => requestAnimationFrame(blurSend)); // also fires right away
     blurObs.observe(document.getElementById("app"));
   } else {
@@ -247,8 +253,6 @@ function applyLanguage() {
 
 // ---------- settings ----------
 
-/** Linux windows are always transparent (CSS corners). */
-const isLinuxLike = () => S.platform === "linux";
 
 async function openSettings(section = "general") {
   const s = structuredClone(S.settings);
@@ -257,9 +261,9 @@ async function openSettings(section = "general") {
   const sw = (checked) => h("input.switch", { type: "checkbox", checked, role: "switch" });
   /** Slider with its value shown next to it; `.input` is the <input> (value read on save). */
   const range = (value, min, max, unit = "%") => {
-    const input = h("input", { type: "range", min, max, value });
-    const out = h("output", {}, value + unit);
-    input.oninput = () => { out.value = input.value + unit; };
+    const input = h("input", { type: "range", min, max, value, "aria-valuetext": value + unit });
+    const out = h("output", { "aria-hidden": "true" }, value + unit); // the slider announces its own value
+    input.oninput = () => { out.value = input.value + unit; input.setAttribute("aria-valuetext", out.value); };
     const el = h("div.range", {}, input, out);
     el.input = input;
     return el;
@@ -303,7 +307,7 @@ async function openSettings(section = "general") {
     update_channel: sel(s.behavior.update_channel, [["stable", t("ch_stable")], ["beta", t("ch_beta")], ["nightly", t("ch_nightly")]]),
     agent_socket: h("input", { value: s.ssh.agent_socket, placeholder: t("agent_auto"), list: "agents" }),
     keepalive: num(s.ssh.keepalive_secs, 0, 600),
-    bg_opacity: range(s.terminal.background_opacity, 0, 100),
+    bg_opacity: range(Math.max(30, s.terminal.background_opacity), 30, 100), // below 30 % text over a busy image is unreadable
     bg_blur: range(s.terminal.background_blur, 0, 40, " px"),
     bg_image_opacity: range(s.terminal.background_image_opacity, 0, 100),
     bg_fit: sel(s.terminal.background_image_fit, ["cover", "contain", "tile", "center", "stretch"].map((v) => [v, t("fit_" + v)])),
@@ -313,7 +317,7 @@ async function openSettings(section = "general") {
     animations: sw(s.performance.animations),
     probe_secs: sel(String(s.performance.probe_secs), [...new Set(["10", "30", "60", "300", "0", String(s.performance.probe_secs)])].map((v) => [v, v === "0" ? t("probe_manual") : t("every_secs", v)])),
     material: sel(s.window.material, [["none", t("mat_none")], ...(MATERIALS[S.platform] || []).map((m) => [m, t("mat_" + m)])]),
-    ui_opacity: range(s.window.interface_opacity, 20, 100),
+    ui_opacity: range(Math.max(40, s.window.interface_opacity), 40, 100),
     stats_secs: sel(String(s.performance.stats_secs), [...new Set(["1", "2", "3", "5", "10", String(s.performance.stats_secs)])].map((v) => [v, t("every_secs", v)])),
   };
   f.material.disabled = S.platform === "linux" && !isKde(); // GNOME & co. have no blur-behind API
@@ -381,7 +385,7 @@ async function openSettings(section = "general") {
       h("div.actions", {}, h("button.btn.small", { type: "button", onclick: () => { clearLocalHistory(); toast(t("history_cleared"), "success"); } }, t("clear_history"))),
       h("h4", {}, t("bg_title")),
       h("div.form-grid", {},
-        field(t("bg_opacity"), f.bg_opacity, t(isLinuxLike() ? "bg_opacity_hint_linux" : "bg_opacity_hint")),
+        field(t("bg_opacity"), f.bg_opacity, t(S.platform === "windows" ? "bg_opacity_hint" : "bg_opacity_hint_linux")),
         field(t("bg_blur"), f.bg_blur, t("bg_blur_hint")),
         h("div.span2", {}, field(t("bg_image"), imgPick)),
         field(t("bg_image_opacity"), f.bg_image_opacity), field(t("bg_fit"), f.bg_fit),
@@ -410,13 +414,20 @@ async function openSettings(section = "general") {
   nav.append(...Object.entries(pages).map(([k, [title]]) => h("button", { type: "button", role: "tab", dataset: { k }, onclick: () => show(k) }, title)));
   show(section);
 
+  const apply = () => saveSettingsForm(f, colors, kb, bgImage);
   const ok = await modal(t("settings_title"), (close) => h("form.settings", { onsubmit: (e) => { e.preventDefault(); close(true); } },
     h("div.settings-body", {}, nav, content),
     h("footer", {}, h("span.mute.small.grow", {}, t("config_file", `${S.configDir}/config.toml`)),
-      h("button.btn", { type: "button", onclick: () => close(false) }, t("cancel")), h("button.btn.primary", { type: "submit" }, t("save")))),
+      h("button.btn", { type: "button", onclick: () => close(false) }, t("cancel")),
+      h("button.btn", { type: "button", onclick: () => apply() }, t("apply")),
+      h("button.btn.primary", { type: "submit" }, t("save")))),
   { wide: true, cls: "settings-modal" });
-  if (!ok) return;
+  if (ok) await apply();
+}
 
+/** Reads the settings form into a copy of the current settings, saves and applies it (Apply keeps the window open). */
+async function saveSettingsForm(f, colors, kb, bgImage) {
+  const s = structuredClone(S.settings);
   const n = (el, d) => (el.value !== "" && Number.isFinite(+el.value) ? +el.value : d);
   Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.read(), ui_font_size: n(f.ui_font_size, 13), accent: "", colors: Object.fromEntries(colors.filter((c) => c.on.checked).map((c) => [c.k, c.pick.value])), density: f.density.value });
   Object.assign(s.terminal, { font_family: f.font_family.read(), font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, keep_focus: f.keep_focus.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked, focus_single: f.focus_single.checked, focus_width: Math.min(6, Math.max(1, n(f.focus_width, 2))) });
@@ -425,13 +436,13 @@ async function openSettings(section = "general") {
   // A picked file is copied into the config folder (shrunk if big), so the sync can carry it to other devices.
   let img = bgImage.value.trim();
   if (img !== s.terminal.background_image && /[\\/]/.test(img)) {
-    try { img = await invoke("import_background", { path: img }); } catch (e) { toast(String(e), "error"); img = s.terminal.background_image; }
+    try { img = bgImage.value = await invoke("import_background", { path: img }); } catch (e) { toast(String(e), "error"); img = s.terminal.background_image; }
   }
   Object.assign(s.window, { material: f.material.value, interface_opacity: +f.ui_opacity.input.value });
   Object.assign(s.terminal, { background_opacity: +f.bg_opacity.input.value, background_blur: +f.bg_blur.input.value, background_image: img,
     background_image_opacity: +f.bg_image_opacity.input.value, background_image_fit: f.bg_fit.value, background_image_x: f.bg_x.value, background_image_y: f.bg_y.value });
   Object.assign(s.performance, { gpu: f.gpu.checked, animations: f.animations.checked, probe_secs: +f.probe_secs.value, stats_secs: +f.stats_secs.value || 3 });
-  s.keybindings = kb;
+  s.keybindings = { ...kb }; // the form keeps editing kb after Apply
   const langChanged = s.appearance.language !== S.settings.appearance.language;
   try {
     await invoke("save_settings", { settings: s });
@@ -496,6 +507,7 @@ async function boot() {
   document.body.dataset.platform = document.documentElement.dataset.platform = S.platform;
   document.documentElement.dataset.desktop = b.desktop;
   transparentAtLaunch = needsTransparentWindow(S.settings);
+  syncTransparency();
   initMenubar();
   for (const [id, name] of [["toggle-sidebar", "sidebar"], ["add-folder", "folderPlus"], ["add-host", "plus"], ["clear-term", "clear"], ["split-h", "splitH"], ["split-v", "splitV"], ["toggle-panel", "panel"], ["open-settings", "settings"]]) {
     document.getElementById(id).append(icon(name, 16));

@@ -2,6 +2,8 @@
 # Generate the Xcode project with `xcodegen` in this folder (README → iOS).
 name: Termix
 options:
+  # The UI is written in French: system formatters (sizes, durations, dates) must speak it too, not "GB" / "2 days".
+  developmentLanguage: fr
   deploymentTarget:
     iOS: "26.0"
 packages:

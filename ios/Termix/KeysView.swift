@@ -16,26 +16,29 @@ struct KeysView: View {
 
     var body: some View {
         List {
-            if !synced.isEmpty {
-                Section {
-                    ForEach(synced) { row($0) }
-                } header: {
-                    Text("Synchronisées")
-                } footer: {
-                    Text("Chiffrées dans le coffre, sur tous vos appareils.")
+            ThemedRows {
+                if !synced.isEmpty {
+                    Section {
+                        ForEach(synced) { row($0) }
+                    } header: {
+                        Text("Synchronisées")
+                    } footer: {
+                        Text("Chiffrées dans le coffre, sur tous vos appareils.")
+                    }
                 }
-            }
-            if !local.isEmpty {
-                Section {
-                    ForEach(local) { row($0) }
-                } header: {
-                    Text("Sur cet appareil uniquement")
-                } footer: {
-                    Text(canSync ? "Ne quittent pas cet appareil. Balayez vers la droite pour en synchroniser une."
-                                 : "Pour les synchroniser, connectez la synchro et déverrouillez le coffre (Réglages → Synchronisation).")
+                if !local.isEmpty {
+                    Section {
+                        ForEach(local) { row($0) }
+                    } header: {
+                        Text("Sur cet appareil uniquement")
+                    } footer: {
+                        Text(canSync ? "Ne quittent pas cet appareil. Balayez vers la droite pour en synchroniser une."
+                                     : "Pour les synchroniser, connectez la synchro et déverrouillez le coffre (Réglages → Synchronisation).")
+                    }
                 }
             }
         }
+        .themedBackground()
         .overlay {
             if model.keys.isEmpty {
                 ContentUnavailableView {
@@ -143,36 +146,39 @@ struct KeyImportView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    // PasteButton reads the clipboard without iOS's permission prompt.
-                    PasteButton(payloadType: String.self) { strings in
-                        if let s = strings.first { text = s }
+                ThemedRows {
+                    Section {
+                        // PasteButton reads the clipboard without iOS's permission prompt.
+                        PasteButton(payloadType: String.self) { strings in
+                            if let s = strings.first { text = s }
+                        }
+                        Button("Choisir un fichier…", systemImage: "doc") { picking = true }
+                    } footer: {
+                        Text("Depuis le Mac : pbcopy < ~/.ssh/id_ed25519, puis Coller ici grâce au presse-papiers universel.")
                     }
-                    Button("Choisir un fichier…", systemImage: "doc") { picking = true }
-                } footer: {
-                    Text("Depuis le Mac : pbcopy < ~/.ssh/id_ed25519, puis Coller ici grâce au presse-papiers universel.")
-                }
 
-                Section("Clé privée") {
-                    TextEditor(text: $text)
-                        .font(.caption.monospaced())
-                        .frame(minHeight: 140)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityLabel("Clé privée")
-                }
-
-                Section {
-                    TextField("Nom (facultatif)", text: $name)
-                    if canSync {
-                        Toggle("Synchroniser avec mes appareils", isOn: $sync)
+                    Section("Clé privée") {
+                        TextEditor(text: $text)
+                            .font(.caption.monospaced())
+                            .frame(minHeight: 140)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityLabel("Clé privée")
                     }
-                } footer: {
-                    Text(canSync && sync
-                         ? "Chiffrée dans le coffre de synchro, puis disponible sur vos autres appareils."
-                         : "Gardée dans le trousseau de cet appareil. Une clé protégée par une phrase de passe la demande dans la fiche de l'hôte.")
+
+                    Section {
+                        TextField("Nom (facultatif)", text: $name)
+                        if canSync {
+                            Toggle("Synchroniser avec mes appareils", isOn: $sync)
+                        }
+                    } footer: {
+                        Text(canSync && sync
+                             ? "Chiffrée dans le coffre de synchro, puis disponible sur vos autres appareils."
+                             : "Gardée dans le trousseau de cet appareil. Une clé protégée par une phrase de passe la demande dans la fiche de l'hôte.")
+                    }
                 }
             }
+            .themedBackground()
             .navigationTitle("Ajouter une clé")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

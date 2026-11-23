@@ -132,9 +132,9 @@ pub struct Terminal {
     pub focus_single: bool,
     /// Focus border width, in px.
     pub focus_width: u32,
-    /// Background colour opacity, 0-100. Below 100 the background image, or the desktop, shows through.
+    /// Background colour opacity, 30-100 (lower is unreadable). Below 100 the background image, or the desktop, shows through.
     pub background_opacity: u32,
-    /// Blur of the background image, in px (the desktop blur is the window material).
+    /// Blur of the background image, in px; without an image, > 0 turns on the system blur of the desktop.
     pub background_blur: u32,
     /// Imported image ("<hash>.<ext>" in <config>/backgrounds, synced) or a path on this machine; empty = none.
     pub background_image: String,

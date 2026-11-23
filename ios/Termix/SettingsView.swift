@@ -13,64 +13,67 @@ struct SettingsView: View {
         @Bindable var model = model
         NavigationStack {
             Form {
-                Section {
-                    Picker("Thème", selection: Binding(get: { model.themeName }, set: { model.setTheme($0) })) {
-                        ForEach(model.themeChoices, id: \.id) { t in
-                            Label { Text(t.label) } icon: { Swatch(theme: Theme.resolve(t.id, user: model.userThemes, systemDark: model.systemDark)) }
-                                .tag(t.id)
+                ThemedRows {
+                    Section {
+                        Picker("Thème", selection: Binding(get: { model.themeName }, set: { model.setTheme($0) })) {
+                            ForEach(model.themeChoices, id: \.id) { t in
+                                Label { Text(t.label) } icon: { Swatch(theme: Theme.resolve(t.id, user: model.userThemes, systemDark: model.systemDark)) }
+                                    .tag(t.id)
+                            }
+                        }
+                        .pickerStyle(.navigationLink)
+                    } header: {
+                        Text("Apparence")
+                    } footer: {
+                        Text("Le thème est partagé avec vos autres appareils par la synchronisation.")
+                    }
+
+                    Section {
+                        Picker("Police", selection: $model.fontName) {
+                            ForEach(fonts, id: \.0) { Text($0.1).font(.custom($0.0, size: 15)).tag($0.0) }
+                        }
+                        Stepper(value: $model.fontSize, in: 7...32) {
+                            LabeledContent("Taille", value: "\(Int(model.fontSize)) pt")
+                        }
+                        Toggle("Garder l'écran allumé", isOn: $model.keepAwake)
+                    } header: {
+                        Text("Terminal")
+                    } footer: {
+                        Text("Propres à cet appareil. Pincez le terminal pour changer la taille du texte ; l'écran reste allumé tant qu'une session est ouverte.")
+                    }
+
+                    Section {
+                        Toggle("Sessions persistantes (tmux)", isOn: Binding(get: { model.tmuxDefault }, set: { model.setTmuxDefault($0) }))
+                    } footer: {
+                        Text("Si tmux est installé sur le serveur, le shell tourne dedans : il continue quand iOS coupe la connexion et Termix le reprend au retour. Partagé avec vos ordinateurs ; chaque hôte peut aussi choisir.")
+                    }
+
+                    Section {
+                        NavigationLink { KeysView() } label: {
+                            LabeledContent("Clés SSH", value: model.keys.isEmpty ? "Aucune" : "\(model.keys.count)")
+                        }
+                        NavigationLink { SyncView() } label: {
+                            LabeledContent("Synchronisation", value: syncSummary)
                         }
                     }
-                    .pickerStyle(.navigationLink)
-                } header: {
-                    Text("Apparence")
-                } footer: {
-                    Text("Le thème est partagé avec vos autres appareils par la synchronisation.")
-                }
 
-                Section {
-                    Picker("Police", selection: $model.fontName) {
-                        ForEach(fonts, id: \.0) { Text($0.1).font(.custom($0.0, size: 15)).tag($0.0) }
+                    Section {
+                        if let url = model.exportFile() {
+                            ShareLink(item: url) { Label("Exporter les hôtes", systemImage: "square.and.arrow.up") }
+                        }
+                        Button("Importer des hôtes…", systemImage: "square.and.arrow.down") { importing = true }
+                    } header: {
+                        Text("Hôtes")
+                    } footer: {
+                        Text("Le fichier JSON de l'ordinateur (Fichier → Exporter les hôtes), sans les mots de passe.")
                     }
-                    Stepper(value: $model.fontSize, in: 7...32) {
-                        LabeledContent("Taille", value: "\(Int(model.fontSize)) pt")
-                    }
-                    Toggle("Garder l'écran allumé", isOn: $model.keepAwake)
-                } header: {
-                    Text("Terminal")
-                } footer: {
-                    Text("Propres à cet appareil. Pincez le terminal pour changer la taille du texte ; l'écran reste allumé tant qu'une session est ouverte.")
-                }
 
-                Section {
-                    Toggle("Sessions persistantes (tmux)", isOn: Binding(get: { model.tmuxDefault }, set: { model.setTmuxDefault($0) }))
-                } footer: {
-                    Text("Si tmux est installé sur le serveur, le shell tourne dedans : il continue quand iOS coupe la connexion et Termix le reprend au retour. Partagé avec vos ordinateurs ; chaque hôte peut aussi choisir.")
-                }
-
-                Section {
-                    NavigationLink { KeysView() } label: {
-                        LabeledContent("Clés SSH", value: model.keys.isEmpty ? "Aucune" : "\(model.keys.count)")
+                    Section {
+                        LabeledContent("Version", value: model.version)
                     }
-                    NavigationLink { SyncView() } label: {
-                        LabeledContent("Synchronisation", value: syncSummary)
-                    }
-                }
-
-                Section {
-                    if let url = model.exportFile() {
-                        ShareLink(item: url) { Label("Exporter les hôtes", systemImage: "square.and.arrow.up") }
-                    }
-                    Button("Importer des hôtes…", systemImage: "square.and.arrow.down") { importing = true }
-                } header: {
-                    Text("Hôtes")
-                } footer: {
-                    Text("Le fichier JSON de l'ordinateur (Fichier → Exporter les hôtes), sans les mots de passe.")
-                }
-
-                Section {
-                    LabeledContent("Version", value: model.version)
                 }
             }
+            .themedBackground()
             .navigationTitle("Réglages")
             .navigationBarTitleDisplayMode(.inline)
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
@@ -122,12 +125,15 @@ struct SyncView: View {
 
     var body: some View {
         Form {
-            if let s = model.sync, s.mode == "server", s.loggedIn {
-                connected(s)
-            } else {
-                login
+            ThemedRows {
+                if let s = model.sync, s.mode == "server", s.loggedIn {
+                    connected(s)
+                } else {
+                    login
+                }
             }
         }
+        .themedBackground()
         .navigationTitle("Synchronisation")
         .disabled(busy)
         .overlay { if busy { ProgressView() } }
