@@ -435,45 +435,138 @@ pub fn sync_workspaces(app: AppHandle) -> Vec<Value> {
     v.into_iter().map(|(_, v)| v).collect()
 }
 
-// ---------- SSH keys in the vault ----------
+// ---------- SSH keys ----------
+// Every key's PEM is in the keychain as "key:<id>", the slot ssh::connect reads for `Host::key_id`. A synced key is
+// also sealed in the vault (record "key:<id>"), a key of this device only is listed in keys.json. Moving a key from
+// one to the other keeps its id, so the hosts using it don't change.
 
-#[tauri::command]
-pub fn sync_keys() -> Vec<Value> {
-    Store::load()
+fn vault_keys(store: &Store) -> Vec<Value> {
+    store
         .records
         .iter()
         .filter_map(|(k, r)| {
             let id = k.strip_prefix("key:")?;
             let v = r.v.as_ref()?;
-            Some(json!({ "id": id, "name": v["name"], "pub": v["pub"] }))
+            Some(json!({ "id": id, "name": v["name"], "pub": v["pub"], "synced": true }))
         })
         .collect()
 }
 
+/// Synced keys, then this device's own (`synced: false`).
 #[tauri::command]
-pub async fn sync_key_import(app: AppHandle, path: String, name: String) -> R<String> {
-    let pem = std::fs::read_to_string(&path).map_err(e)?;
-    if !pem.contains("PRIVATE KEY") {
-        return Err("ce fichier n'est pas une clé privée".into());
+pub fn keys() -> Vec<Value> {
+    let mut v = vault_keys(&Store::load());
+    v.extend(config::local_keys().into_iter().map(|k| json!({ "id": k.id, "name": k.name, "pub": k.public, "synced": false })));
+    v
+}
+
+/// Pasted keys often lose their line breaks (one long line with spaces) or gain \r, and russh then skips
+/// the body silently: rebuild the layout it reads (BEGIN and END lines, base64 lines of 70 like OpenSSH).
+pub fn normalize_pem(raw: &str) -> String {
+    let s = raw.trim().replace("\r\n", "\n").replace('\r', "\n");
+    let as_is = || format!("{s}\n");
+    let Some(b) = s.find("-----BEGIN ") else { return as_is() }; // PuTTY .ppk and the like
+    let Some(h) = s[b + 11..].find("-----").map(|i| b + 16 + i) else { return as_is() };
+    let Some(e) = s[h..].find("-----END ").map(|i| h + i) else { return as_is() };
+    let Some(end) = s[e + 9..].find("-----").map(|i| e + 14 + i) else { return as_is() };
+    let body: String = s[h..e].chars().filter(|c| !c.is_whitespace()).collect();
+    // Encrypted PKCS#1 keys carry "Proc-Type:"/"DEK-Info:" header lines: keep their layout.
+    if s[h..e].contains(':') || !body.is_ascii() {
+        return as_is();
     }
-    let public = russh::keys::decode_secret_key(&pem, None).ok().and_then(|k| k.public_key().to_openssh().ok()).unwrap_or_default();
-    let vault = Vault::load().ok_or("déverrouillez d'abord le coffre de synchro")?;
-    let dev = sync_settings(&app).sync.device_id;
+    let lines: Vec<&str> = body.as_bytes().chunks(70).map(|c| std::str::from_utf8(c).unwrap_or_default()).collect();
+    format!("{}\n{}\n{}\n", &s[b..h], lines.join("\n"), &s[e..end])
+}
+
+/// A private key as text (pasted) or from a file. `sync`: sealed in the vault for every device, else this one only.
+#[tauri::command]
+pub async fn key_import(app: AppHandle, text: Option<String>, path: Option<String>, name: String, sync: bool) -> R<String> {
+    let raw = match (text.filter(|t| !t.trim().is_empty()), path) {
+        (Some(t), _) => t,
+        (None, Some(p)) => std::fs::read_to_string(&p).map_err(|_| "fichier illisible : ce n'est pas une clé privée au format texte".to_string())?,
+        (None, None) => return Err("rien à importer".into()),
+    };
+    if sync && Vault::load().is_none() {
+        return Err("déverrouillez d'abord le coffre de synchro".into());
+    }
+    let pem = normalize_pem(&raw);
+    // Checked now rather than at the first connection; a passphrase-protected key is read with the host's passphrase.
+    let public = match russh::keys::decode_secret_key(&pem, None) {
+        Ok(k) => k.public_key().to_openssh().unwrap_or_default(),
+        Err(russh::keys::Error::KeyIsEncrypted) => String::new(),
+        Err(err) => return Err(format!("clé privée illisible ({err})")),
+    };
+    let name = match name.trim() {
+        // The key's comment (user@machine), else its type.
+        "" => public.split(' ').nth(2).or(public.split(' ').next()).filter(|n| !n.is_empty()).unwrap_or("Clé SSH").to_string(),
+        n => n.to_string(),
+    };
     let id = uuid::Uuid::new_v4().to_string();
+    config::secret_set(&format!("key:{id}"), &pem).map_err(e)?;
+    let mut local = config::local_keys();
+    local.push(config::LocalKey { id: id.clone(), name, public });
+    config::save_local_keys(&local).map_err(e)?;
+    if sync {
+        keys_set_synced(app, vec![id.clone()], true).await?;
+    }
+    Ok(id)
+}
+
+/// Moves keys into the vault (`synced`) or back to this device only, where the other devices lose them.
+#[tauri::command]
+pub async fn keys_set_synced(app: AppHandle, ids: Vec<String>, synced: bool) -> R<()> {
+    let dev = sync_settings(&app).sync.device_id;
+    let vault = if synced { Some(Vault::load().ok_or("déverrouillez d'abord le coffre de synchro")?) } else { None };
     {
         let ctl = app.state::<SyncCtl>();
         let _g = ctl.lock.lock().await;
         let mut store = Store::load();
-        store.put(&format!("key:{id}"), Some(json!({ "name": name, "pub": public, "enc": vault.seal(pem.as_bytes()) })), &dev);
-        config::secret_set(&format!("key:{id}"), &pem).map_err(e)?;
-        store.save().map_err(e)?;
+        let mut local = config::local_keys();
+        move_keys(&mut store, &mut local, &ids, vault.as_ref(), &config::secret_get, &dev)?;
+        // The side that gains the key is written first: a crash in between leaves it listed twice, never lost.
+        if synced {
+            store.save().map_err(e)?;
+            config::save_local_keys(&local).map_err(e)?;
+        } else {
+            config::save_local_keys(&local).map_err(e)?;
+            store.save().map_err(e)?;
+        }
     }
     kick(&app);
-    Ok(id)
+    Ok(())
 }
 
+/// The bookkeeping of keys_set_synced: vault records and the local list (the keychain slot never changes).
+fn move_keys(store: &mut Store, local: &mut Vec<config::LocalKey>, ids: &[String], vault: Option<&Vault>, secret: &dyn Fn(&str) -> Option<String>, dev: &str) -> R<()> {
+    for id in ids {
+        let slot = format!("key:{id}");
+        if let Some(vault) = vault {
+            let Some(i) = local.iter().position(|k| &k.id == id) else { continue }; // already synced
+            let pem = secret(&slot).ok_or("clé absente du trousseau de cet appareil")?;
+            let k = local.remove(i);
+            store.put(&slot, Some(json!({ "name": k.name, "pub": k.public, "enc": vault.seal(pem.as_bytes()) })), dev);
+        } else {
+            let Some(v) = store.records.get(&slot).and_then(|r| r.v.clone()) else { continue }; // already local
+            if secret(&slot).is_none() {
+                return Err(format!("« {} » n'est pas encore sur cet appareil : déverrouillez le coffre d'abord", v["name"].as_str().unwrap_or(id)));
+            }
+            let text = |k: &str| v[k].as_str().unwrap_or_default().to_string();
+            local.push(config::LocalKey { id: id.clone(), name: text("name"), public: text("pub") });
+            store.put(&slot, None, dev);
+        }
+    }
+    Ok(())
+}
+
+/// Deletes a key from this device, and from every device when it is synced.
 #[tauri::command]
-pub async fn sync_key_delete(app: AppHandle, id: String) -> R<()> {
+pub async fn key_delete(app: AppHandle, id: String) -> R<()> {
+    let mut local = config::local_keys();
+    if let Some(i) = local.iter().position(|k| k.id == id) {
+        local.remove(i);
+        config::save_local_keys(&local).map_err(e)?;
+        return config::secret_set(&format!("key:{id}"), "").map_err(e);
+    }
     let dev = sync_settings(&app).sync.device_id;
     {
         let ctl = app.state::<SyncCtl>();
@@ -485,4 +578,38 @@ pub async fn sync_key_delete(app: AppHandle, id: String) -> R<()> {
     }
     kick(&app);
     Ok(())
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::normalize_pem;
+    use russh::keys::ssh_key::{private::Ed25519Keypair, LineEnding, PrivateKey};
+
+    #[test]
+    fn pasted_key_without_line_breaks_parses() {
+        let pem = PrivateKey::from(Ed25519Keypair::from_seed(&[7; 32])).to_openssh(LineEnding::LF).unwrap();
+        assert_eq!(normalize_pem(&pem), *pem, "a well-formed key stays as it is");
+        let pasted = format!("  {}\r\n", pem.replace('\n', " "));
+        assert_eq!(normalize_pem(&pasted), *pem);
+        assert!(russh::keys::decode_secret_key(&normalize_pem(&pasted), None).is_ok());
+        assert_eq!(normalize_pem("not a key"), "not a key\n");
+    }
+    #[test]
+    fn key_moves_to_the_vault_and_back_with_the_same_id() {
+        use crate::sync::{Store, Vault};
+        let vault = Vault::new(&[3; 32]);
+        let (mut store, mut local) = (Store::default(), vec![crate::config::LocalKey { id: "k1".into(), name: "laptop".into(), public: "ssh-ed25519 AAA me".into() }]);
+        let secret = |slot: &str| (slot == "key:k1").then(|| "PEM".to_string());
+        let ids = ["k1".to_string()];
+        super::move_keys(&mut store, &mut local, &ids, Some(&vault), &secret, "dev").unwrap();
+        assert!(local.is_empty());
+        let rec = store.records["key:k1"].v.clone().unwrap();
+        assert_eq!((rec["name"].as_str(), vault.open(rec["enc"].as_str().unwrap()).as_deref()), (Some("laptop"), Some(&b"PEM"[..])));
+        super::move_keys(&mut store, &mut local, &ids, None, &secret, "dev").unwrap();
+        assert_eq!((local.len(), local[0].id.as_str(), local[0].name.as_str()), (1, "k1", "laptop"));
+        assert!(store.records["key:k1"].v.is_none(), "a tombstone takes it off the other devices");
+        // A synced key this device can't read yet (vault never unlocked here) stays synced.
+        store.put("key:k2", Some(serde_json::json!({ "name": "nas" })), "other");
+        assert!(super::move_keys(&mut store, &mut local, &["k2".to_string()], None, &secret, "dev").is_err());
+    }
 }

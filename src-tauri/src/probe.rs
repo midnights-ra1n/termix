@@ -15,6 +15,9 @@ async fn ssh_ok(host: &str, port: u16) -> bool {
 }
 
 async fn ping_ok(host: &str) -> bool {
+    if cfg!(target_os = "ios") {
+        return false; // an iOS app can't run `ping`
+    }
     let mut c = tokio::process::Command::new("ping");
     if cfg!(target_os = "windows") {
         c.args(["-n", "1", "-w", "2000", host]);
@@ -53,29 +56,6 @@ pub async fn probe_all(hosts: &[Host]) -> HashMap<String, String> {
         }
     }
     out
-}
-
-/// Small filled circle for native menu items.
-#[cfg(desktop)]
-pub fn dot(status: &str) -> tauri::image::Image<'static> {
-    let (r, g, b) = match status {
-        "up" => (0x34, 0xC7, 0x59),
-        "ping" => (0xFF, 0xCC, 0x00),
-        "down" => (0xFF, 0x3B, 0x30),
-        _ => (0x8E, 0x8E, 0x93),
-    };
-    const N: usize = 32;
-    let mut px = vec![0u8; N * N * 4];
-    let c = (N as f32 - 1.0) / 2.0;
-    for y in 0..N {
-        for x in 0..N {
-            let d = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
-            let a = (9.5 - d).clamp(0.0, 1.0); // radius ~10px out of 32, antialiased edge
-            let i = (y * N + x) * 4;
-            px[i..i + 4].copy_from_slice(&[r, g, b, (a * 255.0) as u8]);
-        }
-    }
-    tauri::image::Image::new_owned(px, N as u32, N as u32)
 }
 
 #[cfg(test)]

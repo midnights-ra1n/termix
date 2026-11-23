@@ -1,8 +1,9 @@
 // Sidebar: host tree (nested folders, drag & drop), search, tags, status dots, editor, import/export.
-import { confirm } from "@tauri-apps/plugin-dialog";
-import { S, h, icon, invoke, modal, field, uid, toast, saveHosts, statusDot, HOST_ICONS, contextMenu, openDialog, saveDialog, isIOS } from "./ui.js";
+import { open as openDialog, save as saveDialog, confirm } from "@tauri-apps/plugin-dialog";
+import { S, h, icon, invoke, modal, field, uid, toast, saveHosts, statusDot, HOST_ICONS, contextMenu } from "./ui.js";
 import { t } from "./i18n.js";
 import { wantsTmux } from "./panes.js";
+import { importKey } from "./keys.js";
 
 let query = "";
 let activeTag = null;
@@ -88,7 +89,6 @@ function dropTarget(el, folderId) {
 }
 
 function draggable(el, payload) {
-  if (isIOS()) return; // a long press opens the menu there (main.js); the editor's Folder field moves hosts
   el.draggable = true;
   el.addEventListener("dragstart", (e) => {
     e.dataTransfer.setData("text/plain", payload);
@@ -195,18 +195,25 @@ export async function editFolder(f, parent = null) {
   await saveHosts();
 }
 
+const keyOption = (k, selected) => h("option", { value: k.id, selected }, `${k.name || k.id} — ${t(k.synced ? "key_where_synced" : "key_where_local")}`);
+
 export async function editHost(x = null, folder = null) {
   const isNew = !x;
   x = x ? structuredClone(x) : { id: uid(), name: "", host: "", port: 22, user: "", key_path: "", description: "", icon: "server", tags: [], folder, favorite: false, tmux: "" };
   const hasPw = !isNew && (await invoke("has_secret", { id: x.id }).catch(() => false));
-  const vaultKeys = await invoke("sync_keys").catch(() => []);
+  const keys = await invoke("keys").catch(() => []);
   const inp = (k, attrs = {}) => h("input", { value: x[k] ?? "", ...attrs });
   const f = {
     name: inp("name", { placeholder: "web-1", autofocus: true }),
     host: inp("host", { placeholder: "192.168.1.10 / example.com", required: true }),
     port: inp("port", { type: "number", min: 1, max: 65535 }),
     user: inp("user", { placeholder: "root" }),
-    key_path: inp("key_path", { placeholder: "~/.ssh/id_ed25519" }),
+    key_path: inp("key_path", { placeholder: "~/.ssh/id_ed25519", onpaste: (e) => {
+      const text = e.clipboardData.getData("text");
+      if (!text.includes("PRIVATE KEY") && !text.includes("PuTTY-User-Key-File")) return; // a path: normal paste
+      e.preventDefault();
+      useImported(importKey({ text }));
+    } }),
     password: h("input", { type: "password", placeholder: hasPw ? t("f_pass_saved") : t("f_optional") }),
     passphrase: h("input", { type: "password", placeholder: t("f_passphrase_ph") }),
     description: h("textarea", { rows: 2 }, x.description),
@@ -215,8 +222,7 @@ export async function editHost(x = null, folder = null) {
     folder: h("select", {}, ...folderOptions(x.folder)),
     tmux: h("select", {}, ...[["", t(S.settings.terminal.tmux ? "tmux_host_default_on" : "tmux_host_default_off")], ["on", t("tmux_host_on")], ["off", t("tmux_host_off")]]
       .map(([v, l]) => h("option", { value: v, selected: v === (x.tmux || "") }, l))),
-    key_id: h("select", {}, h("option", { value: "" }, t("f_vault_key_none")),
-      ...vaultKeys.map((k) => h("option", { value: k.id, selected: k.id === x.key_id }, k.name || k.id))),
+    key_id: h("select", {}, h("option", { value: "" }, t("f_vault_key_none")), ...keys.map((k) => keyOption(k, k.id === x.key_id))),
   };
   let chosenIcon = x.icon || "server";
   const icons = h("div.icon-grid", { role: "radiogroup", "aria-label": t("f_icon") }, ...Object.keys(HOST_ICONS).map((k) =>
@@ -227,16 +233,23 @@ export async function editHost(x = null, folder = null) {
     const p = await openDialog({ title: t("pick_key"), defaultPath: "~/.ssh" });
     if (p) f.key_path.value = p;
   } }, t("browse"));
+  // An imported key goes to Settings → SSH keys and is picked here; the file field is for keys left on disk.
+  const useImported = (pending) => pending.then(async (id) => {
+    const k = (await invoke("keys")).find((y) => y.id === id);
+    if (k) f.key_id.append(keyOption(k, true));
+    f.key_id.value = id;
+    f.key_path.value = "";
+  }, (e) => toast(String(e), "error"));
   const importBtn = h("button.btn.small", { type: "button", onclick: async () => {
-    const p = await openDialog({ title: t("import_key") });
-    if (p) try { f.key_path.value = await invoke("import_key", { path: p }); toast(t("key_imported"), "success"); } catch (e) { toast(String(e), "error"); }
+    const path = await openDialog({ title: t("import_key"), defaultPath: "~/.ssh" });
+    if (path) useImported(importKey({ path }));
   } }, t("import"));
 
   const ok = await modal(isNew ? t("host_new") : t("host_edit"), (close) => h("form.grid", { onsubmit: (e) => { e.preventDefault(); close(true); } },
     field(t("f_name"), f.name), field(t("f_host"), f.host),
     field(t("f_user"), f.user), field(t("f_port"), f.port),
-    h("div.span2", {}, field(t("f_key"), h("div.inline", {}, f.key_path, !isIOS() && browse, importBtn), t("f_key_hint"))),
-    vaultKeys.length ? h("div.span2", {}, field(t("f_vault_key"), f.key_id, t("f_vault_key_hint"))) : null,
+    h("div.span2", {}, field(t("f_key"), h("div.inline", {}, f.key_path, browse, importBtn), t("f_key_hint"))),
+    h("div.span2", {}, field(t("f_vault_key"), f.key_id, t("f_vault_key_hint"))),
     field(t("f_password"), f.password, t("f_password_hint")), field(t("f_passphrase"), f.passphrase),
     h("div.span2", {}, field(t("f_desc"), f.description)),
     field(t("f_tags"), f.tags, t("f_tags_hint")), field(t("f_folder"), f.folder),

@@ -1,0 +1,11 @@
+[package]
+name = "tauri-shim"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+tauri-shim-macros = { path = "macros" }
+serde = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }

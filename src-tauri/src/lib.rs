@@ -12,22 +12,14 @@ use config::{HostsDoc, Settings};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::{Channel, InvokeResponseBody};
-#[cfg(desktop)]
 use tauri::menu::{IconMenuItem, Menu, MenuBuilder, MenuItem};
-#[cfg(desktop)]
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State};
-#[cfg(desktop)]
-use tauri::WindowEvent;
-#[cfg(desktop)]
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_updater::UpdaterExt;
-#[cfg(desktop)]
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
-#[cfg(desktop)]
 const REPO: &str = "midnights-ra1n/termix";
 // Visibility and decorations stay ours (hidden until the UI is ready, custom title bar).
-#[cfg(desktop)]
 const WINDOW_STATE: StateFlags = StateFlags::SIZE.union(StateFlags::POSITION).union(StateFlags::MAXIMIZED);
 
 struct AppState {
@@ -84,14 +76,11 @@ fn save_settings(app: AppHandle, st: State<AppState>, mut settings: Settings) ->
     settings.sync = st.settings.lock().unwrap().sync.clone();
     settings.save().map_err(e)?;
     *st.settings.lock().unwrap() = settings.clone();
-    #[cfg(desktop)]
-    {
-        if let Some(t) = app.tray_by_id("main") {
-            let _ = t.set_visible(settings.behavior.tray_icon);
-        }
-        if let Some(w) = app.get_webview_window("main") {
-            apply_effects(&w, &settings);
-        }
+    if let Some(t) = app.tray_by_id("main") {
+        let _ = t.set_visible(settings.behavior.tray_icon);
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        apply_effects(&w, &settings);
     }
     refresh_menus(&app);
     syncd::kick(&app);
@@ -100,8 +89,6 @@ fn save_settings(app: AppHandle, st: State<AppState>, mut settings: Settings) ->
 
 /// Window material (Settings → Appearance): the system's blur or glass behind the window, on macOS and
 /// Windows. Linux (KDE) is driven by the UI, which knows the window's rounded outline (`window_blur`).
-/// iOS draws its Liquid Glass in CSS (style.css, body.glass): there is nothing behind a full-screen app.
-#[cfg(desktop)]
 fn apply_effects(w: &tauri::WebviewWindow, s: &Settings) {
     use tauri::utils::{config::WindowEffectsConfig, WindowEffect as E};
     if cfg!(target_os = "linux") {
@@ -120,7 +107,6 @@ fn apply_effects(w: &tauri::WebviewWindow, s: &Settings) {
 }
 
 /// The window has to be transparent from its creation for a material or a see-through terminal.
-#[cfg(desktop)]
 fn wants_transparent_window(s: &Settings) -> bool {
     s.terminal.background_opacity < 100 || s.window.active().is_some()
 }
@@ -132,7 +118,7 @@ fn windows_11() -> bool {
         .and_then(|k| k.get_string("CurrentBuildNumber"))
         .is_ok_and(|b| b.trim().parse::<u32>().is_ok_and(|n| n >= 22000))
 }
-#[cfg(all(desktop, not(windows)))]
+#[cfg(not(windows))]
 fn windows_11() -> bool {
     false
 }
@@ -233,22 +219,6 @@ async fn detect_agents() -> Vec<(String, String)> {
     tokio::task::spawn_blocking(ssh::known_agents).await.unwrap_or_default()
 }
 
-/// Copies a private key into the app's key store (0600) and returns the new path.
-#[tauri::command]
-fn import_key(path: String) -> R<String> {
-    let src = std::path::PathBuf::from(&path);
-    let dir = config::dir().join("keys");
-    std::fs::create_dir_all(&dir).map_err(e)?;
-    let dst = dir.join(src.file_name().ok_or("chemin invalide")?);
-    std::fs::copy(&src, &dst).map_err(e)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o600)).map_err(e)?;
-    }
-    Ok(dst.to_string_lossy().into())
-}
-
 // ---------- ssh ----------
 
 #[tauri::command]
@@ -284,7 +254,7 @@ async fn ssh_connect(
         move |d| {
             let _ = on_data.send(InvokeResponseBody::Raw(d));
         },
-        move || {
+        move |_| {
             let _ = app2.emit("ssh-closed", &id2);
             let app3 = app2.clone();
             let id3 = id2.clone();
@@ -393,7 +363,6 @@ async fn sftp_remove(st: State<'_, AppState>, id: String, path: String, dir: boo
 
 // ---------- updates ----------
 
-#[cfg(desktop)]
 fn endpoint(channel: &str) -> String {
     match channel {
         "beta" | "nightly" => format!("https://github.com/{REPO}/releases/download/{channel}/latest.json"),
@@ -401,42 +370,26 @@ fn endpoint(channel: &str) -> String {
     }
 }
 
-#[cfg(desktop)]
 async fn find_update(app: &AppHandle, channel: &str) -> anyhow::Result<Option<tauri_plugin_updater::Update>> {
     Ok(app.updater_builder().endpoints(vec![endpoint(channel).parse()?])?.build()?.check().await?)
 }
 
 #[tauri::command]
 async fn check_update(app: AppHandle, channel: String) -> R<Option<(String, String)>> {
-    // iOS apps are only updated by the App Store / TestFlight.
-    #[cfg(mobile)]
-    return {
-        let _ = (app, channel);
-        Ok(None)
-    };
-    #[cfg(desktop)]
     Ok(find_update(&app, &channel).await.map_err(e)?.map(|u| (u.version.clone(), u.body.clone().unwrap_or_default())))
 }
 
 #[tauri::command]
 async fn install_update(app: AppHandle, channel: String) -> R<()> {
-    #[cfg(mobile)]
-    return {
-        let _ = (app, channel);
-        Err("mise à jour via l'App Store".into())
-    };
-    #[cfg(desktop)]
-    {
-        let u = find_update(&app, &channel).await.map_err(e)?.ok_or("aucune mise à jour")?;
-        let bytes = u.download(|_, _| {}, || {}).await.map_err(e)?;
-        #[cfg(target_os = "linux")]
-        if let Some(cmd) = linux_pkg_cmd() {
-            tokio::task::spawn_blocking(move || install_pkg(&bytes, cmd)).await.map_err(e)??;
-            app.restart()
-        }
-        u.install(bytes).map_err(e)?;
+    let u = find_update(&app, &channel).await.map_err(e)?.ok_or("aucune mise à jour")?;
+    let bytes = u.download(|_, _| {}, || {}).await.map_err(e)?;
+    #[cfg(target_os = "linux")]
+    if let Some(cmd) = linux_pkg_cmd() {
+        tokio::task::spawn_blocking(move || install_pkg(&bytes, cmd)).await.map_err(e)??;
         app.restart()
     }
+    u.install(bytes).map_err(e)?;
+    app.restart()
 }
 
 /// .deb/.rpm install command. The plugin chains pkexec, then zenity/kdialog + sudo on any failure, which
@@ -477,6 +430,29 @@ fn install_pkg(bytes: &[u8], cmd: &[&str]) -> R<()> {
 
 // ---------- window / menu / tray ----------
 
+/// Small filled circle for native menu items.
+fn status_dot(status: &str) -> tauri::image::Image<'static> {
+    let (r, g, b) = match status {
+        "up" => (0x34, 0xC7, 0x59),
+        "ping" => (0xFF, 0xCC, 0x00),
+        "down" => (0xFF, 0x3B, 0x30),
+        _ => (0x8E, 0x8E, 0x93),
+    };
+    const N: usize = 32;
+    let mut px = vec![0u8; N * N * 4];
+    let c = (N as f32 - 1.0) / 2.0;
+    for y in 0..N {
+        for x in 0..N {
+            let d = ((x as f32 - c).powi(2) + (y as f32 - c).powi(2)).sqrt();
+            let a = (9.5 - d).clamp(0.0, 1.0); // radius ~10px out of 32, antialiased edge
+            let i = (y * N + x) * 4;
+            px[i..i + 4].copy_from_slice(&[r, g, b, (a * 255.0) as u8]);
+        }
+    }
+    tauri::image::Image::new_owned(px, N as u32, N as u32)
+}
+
+
 /// Probes every host every 30 s (or right away when hosts change), then updates UI + tray.
 fn spawn_prober(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -490,11 +466,8 @@ fn spawn_prober(app: AppHandle) {
                 let _ = app.emit("host-status", &map);
                 refresh_tray(&app, &doc);
                 last = Some(map);
-            } else {
-                #[cfg(desktop)]
-                if let Some(t) = app.tray_by_id("main") {
-                    refresh_tray_icon(&t); // the panel may have switched light/dark
-                }
+            } else if let Some(t) = app.tray_by_id("main") {
+                refresh_tray_icon(&t); // the panel may have switched light/dark
             }
             let st = app.state::<AppState>();
             let secs = st.settings.lock().unwrap().performance.probe_secs;
@@ -510,7 +483,6 @@ fn spawn_prober(app: AppHandle) {
 fn show_main(app: &AppHandle) {
     app.state::<AppState>().shown.store(true, std::sync::atomic::Ordering::Relaxed);
     if let Some(w) = app.get_webview_window("main") {
-        #[cfg(desktop)]
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
@@ -652,7 +624,6 @@ fn refresh_menus(app: &AppHandle) {
 }
 
 /// Tray menu = favourite hosts (or the first ones). Kept icon-only so it stays small next to the MacBook notch.
-#[cfg(desktop)]
 fn tray_menu(app: &AppHandle, doc: &HostsDoc) -> tauri::Result<Menu<tauri::Wry>> {
     let (mode, count) = {
         let s = app.state::<AppState>().settings.lock().unwrap().behavior.clone();
@@ -669,7 +640,7 @@ fn tray_menu(app: &AppHandle, doc: &HostsDoc) -> tauri::Result<Menu<tauri::Wry>>
             let dot = match st { "up" => "🟢", "ping" => "🟡", "down" => "🔴", _ => "⚪" };
             b = b.item(&MenuItem::with_id(app, format!("host:{}", h.id), format!("{dot}  {label}"), true, None::<&str>)?);
         } else {
-            b = b.item(&IconMenuItem::with_id(app, format!("host:{}", h.id), label, true, Some(probe::dot(st)), None::<&str>)?);
+            b = b.item(&IconMenuItem::with_id(app, format!("host:{}", h.id), label, true, Some(status_dot(st)), None::<&str>)?);
         }
     }
     if hosts.is_empty() {
@@ -683,17 +654,13 @@ fn tray_menu(app: &AppHandle, doc: &HostsDoc) -> tauri::Result<Menu<tauri::Wry>>
 }
 
 fn refresh_tray(app: &AppHandle, doc: &HostsDoc) {
-    #[cfg(desktop)]
     if let (Some(t), Ok(m)) = (app.tray_by_id("main"), tray_menu(app, doc)) {
         let _ = t.set_menu(Some(m));
         refresh_tray_icon(&t);
     }
-    #[cfg(mobile)]
-    let _ = (app, doc);
 }
 
 /// macOS tints the template icon itself; elsewhere swap white/black only when the panel changes.
-#[cfg(desktop)]
 fn refresh_tray_icon(t: &tauri::tray::TrayIcon) {
     if cfg!(not(target_os = "macos")) {
         static LAST: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
@@ -707,7 +674,6 @@ fn refresh_tray_icon(t: &tauri::tray::TrayIcon) {
 }
 
 /// The tray glyph is black (macOS template); recoloured white for dark panels.
-#[cfg(desktop)]
 fn tray_icon(dark: bool) -> tauri::Result<tauri::image::Image<'static>> {
     let img = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     if cfg!(target_os = "macos") || !dark {
@@ -777,40 +743,17 @@ fn on_menu(app: &AppHandle, id: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let settings = Settings::load();
-    #[allow(unused_mut)] // only the desktop adds plugins here
     let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
-    {
-        if !settings.behavior.multi_instance {
-            // Must be the first plugin. Launching Termix again (menu, dock, desktop file) brings back the running window.
-            builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)));
-        }
-        builder = builder
-            .plugin(tauri_plugin_process::init())
-            .plugin(tauri_plugin_updater::Builder::new().build())
-            .plugin(tauri_plugin_window_state::Builder::new().with_state_flags(WINDOW_STATE).build())
-            .on_menu_event(|app, ev| on_menu(app, ev.id().as_ref()))
-            .on_window_event(|w, ev| {
-                if let WindowEvent::ThemeChanged(_) = ev {
-                    refresh_tray(w.app_handle(), &HostsDoc::load());
-                }
-                if let WindowEvent::CloseRequested { api, .. } = ev {
-                    // The plugin only writes on exit, which a hidden background app may never reach (logout, kill).
-                    let _ = w.app_handle().save_window_state(WINDOW_STATE);
-                    let st = w.state::<AppState>();
-                    let b = &st.settings.lock().unwrap().behavior;
-                    // Without a tray icon there is no way back to a hidden window on Linux/Windows, so quit there.
-                    if b.run_in_background && (cfg!(target_os = "macos") || b.tray_icon) {
-                        api.prevent_close();
-                        let _ = w.hide();
-                    }
-                }
-            });
+    if !settings.behavior.multi_instance {
+        // Must be the first plugin. Launching Termix again (menu, dock, desktop file) brings back the running window.
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)));
     }
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_native_ui::init())
+        .plugin(tauri_plugin_window_state::Builder::new().with_state_flags(WINDOW_STATE).build())
         .manage(AppState {
             settings: Mutex::new(settings.clone()),
             sessions: Default::default(),
@@ -823,78 +766,87 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
             // Created here (create: false) so Windows/Linux get our own title bar: menus + Windows-style buttons.
-            #[allow(unused_mut)]
             let mut wc = app.config().app.windows[0].clone();
-            #[cfg(desktop)]
-            {
-                if cfg!(not(target_os = "macos")) {
-                    wc.decorations = false; // Windows 11 keeps its rounded corners and shadow (DWM)
-                    if cfg!(target_os = "linux") {
-                        // Rounded corners are drawn in CSS, so the corners must be see-through.
-                        wc.transparent = true;
-                        wc.background_color = None;
-                    }
-                }
-                // See-through terminal or window material: Linux windows are always transparent; macOS / Windows
-                // only when asked, since it is decided at creation (changing it needs a restart).
-                if wants_transparent_window(&settings) {
+            if cfg!(not(target_os = "macos")) {
+                wc.decorations = false; // Windows 11 keeps its rounded corners and shadow (DWM)
+                if cfg!(target_os = "linux") {
+                    // Rounded corners are drawn in CSS, so the corners must be see-through.
                     wc.transparent = true;
                     wc.background_color = None;
                 }
             }
-            let win = tauri::WebviewWindowBuilder::from_config(&handle, &wc)?.build()?;
-            #[cfg(desktop)]
-            {
-                apply_effects(&win, &settings);
-                #[cfg(target_os = "macos")]
-                app.set_menu(build_menu(&handle, &settings)?)?;
-                let tray = TrayIconBuilder::with_id("main")
-                    .icon(tray_icon(true)?)
-                    .icon_as_template(true)
-                    .tooltip("Termix")
-                    .menu(&tray_menu(&handle, &HostsDoc::load())?)
-                    .show_menu_on_left_click(true)
-                    .on_tray_icon_event(|t, ev| {
-                        if let TrayIconEvent::DoubleClick { .. } = ev {
-                            show_main(t.app_handle());
-                        }
-                    })
-                    .build(app)?;
-                tray.set_visible(settings.behavior.tray_icon)?;
-                refresh_tray(&handle, &HostsDoc::load()); // picks the white/black glyph for the panel
-                // Safety net: show the window even if the UI never reports ready.
-                let h2 = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                    if let Some(w) = h2.get_webview_window("main") {
-                        if !w.is_visible().unwrap_or(true) && !h2.state::<AppState>().shown.load(std::sync::atomic::Ordering::Relaxed) {
-                            show_main(&h2);
-                        }
-                    }
-                });
+            // See-through terminal or window material: Linux windows are always transparent; macOS / Windows
+            // only when asked, since it is decided at creation (changing it needs a restart).
+            if wants_transparent_window(&settings) {
+                wc.transparent = true;
+                wc.background_color = None;
             }
-            #[cfg(mobile)]
-            let _ = win;
+            let win = tauri::WebviewWindowBuilder::from_config(&handle, &wc)?.build()?;
+            apply_effects(&win, &settings);
+            #[cfg(target_os = "macos")]
+            app.set_menu(build_menu(&handle, &settings)?)?;
+            let tray = TrayIconBuilder::with_id("main")
+                .icon(tray_icon(true)?)
+                .icon_as_template(true)
+                .tooltip("Termix")
+                .menu(&tray_menu(&handle, &HostsDoc::load())?)
+                .show_menu_on_left_click(true)
+                .on_tray_icon_event(|t, ev| {
+                    if let TrayIconEvent::DoubleClick { .. } = ev {
+                        show_main(t.app_handle());
+                    }
+                })
+                .build(app)?;
+            tray.set_visible(settings.behavior.tray_icon)?;
+            refresh_tray(&handle, &HostsDoc::load()); // picks the white/black glyph for the panel
             spawn_prober(handle.clone());
             syncd::spawn(handle.clone());
+            // Safety net: show the window even if the UI never reports ready.
+            let h2 = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                if let Some(w) = h2.get_webview_window("main") {
+                    if !w.is_visible().unwrap_or(true) && !h2.state::<AppState>().shown.load(std::sync::atomic::Ordering::Relaxed) {
+                        show_main(&h2);
+                    }
+                }
+            });
             Ok(())
         })
+        .on_menu_event(|app, ev| on_menu(app, ev.id().as_ref()))
+        .on_window_event(|w, ev| {
+            if let WindowEvent::ThemeChanged(_) = ev {
+                refresh_tray(w.app_handle(), &HostsDoc::load());
+            }
+            if let WindowEvent::CloseRequested { api, .. } = ev {
+                // The plugin only writes on exit, which a hidden background app may never reach (logout, kill).
+                let _ = w.app_handle().save_window_state(WINDOW_STATE);
+                let st = w.state::<AppState>();
+                let b = &st.settings.lock().unwrap().behavior;
+                // Without a tray icon there is no way back to a hidden window on Linux/Windows, so quit there.
+                if b.run_in_background && (cfg!(target_os = "macos") || b.tray_icon) {
+                    api.prevent_close();
+                    let _ = w.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
-            read_image, import_background, window_blur, boot, app_ready, set_labels, get_menu, menu_click, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents, import_key,
+            read_image, import_background, window_blur, boot, app_ready, set_labels, get_menu, menu_click, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents,
             ssh_connect, recent_sessions, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
             sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
             check_update, install_update,
             syncd::sync_status, syncd::sync_set_mode, syncd::sync_login, syncd::sync_logout, syncd::sync_unlock, syncd::sync_lock, syncd::sync_now, syncd::sync_set_interval, syncd::sync_set_keybindings, syncd::sync_take_keybindings, syncd::sync_resolve,
             syncd::p2p_pair_start, syncd::p2p_pair, syncd::p2p_forget, syncd::sync_set_workspace, syncd::sync_workspaces,
-            syncd::sync_keys, syncd::sync_key_import, syncd::sync_key_delete
+            syncd::keys, syncd::key_import, syncd::key_delete, syncd::keys_set_synced
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Termix")
         .run(|app, ev| {
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = ev {
+            if let RunEvent::Reopen { .. } = ev {
                 show_main(app);
             }
             let _ = (app, ev);
         });
 }
+

@@ -1,9 +1,6 @@
 // Shared state + tiny DOM helpers used by every module.
 import { invoke } from "@tauri-apps/api/core";
-import { documentDir, join } from "@tauri-apps/api/path";
-import { open as pickOpen, save as pickSave } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n.js";
-import { native, nativeMenu, nativeModal, nativeToast } from "./native.js";
 import {
   createElement, Server, Cloud, Database, Monitor, Cpu, Container, Router, Shield, Globe, TerminalSquare,
   House, Box, HardDrive, Flame, Rocket, Folder, FolderOpen, Star, Plus, FolderPlus, Search, Settings,
@@ -25,23 +22,8 @@ export const S = {
   hosts: { folders: [], hosts: [] },
   status: {},
 };
-/** Apple keyboard (⌘ shortcuts): macOS, and iPadOS with a hardware keyboard. */
-export const isMac = () => S.platform === "macos" || S.platform === "ios";
-export const isIOS = () => S.platform === "ios";
+export const isMac = () => S.platform === "macos";
 export { invoke };
-
-// iOS pickers hand back file:// URLs of a private copy: the Rust side wants plain paths.
-const fsPath = (p) => (typeof p === "string" && p.startsWith("file://") ? decodeURIComponent(new URL(p).pathname) : p);
-export async function openDialog(opts) {
-  const r = await pickOpen(opts);
-  return Array.isArray(r) ? r.map(fsPath) : fsPath(r);
-}
-/** iOS has no "save as" for files the app writes: they go to Documents, shown in the Files app (Info.plist). */
-export async function saveDialog(opts) {
-  if (!isIOS()) return pickSave(opts);
-  toast(t("files_app"));
-  return join(await documentDir(), (opts.defaultPath || "termix").split(/[\\/]/).pop());
-}
 
 /** Icons offered for hosts (built-in set). */
 export const HOST_ICONS = {
@@ -120,7 +102,6 @@ export function h(tag, props = {}, ...kids) {
 export const uid = () => crypto.randomUUID();
 
 export function toast(msg, kind = "info", actions = []) {
-  if (native.on) return nativeToast(msg, kind); // iOS: above the sheets too (actions are desktop updates only)
   const box = document.getElementById("toasts");
   const el = h("div.toast." + kind, { role: kind === "error" ? "alert" : "status" }, h("span", {}, msg),
     ...actions.map(([label, fn]) => h("button.btn.small", { onclick: () => { el.remove(); fn(); } }, label)),
@@ -131,7 +112,6 @@ export function toast(msg, kind = "info", actions = []) {
 
 /** Modal dialog; `build(close)` returns the body. Resolves with the value passed to close(). */
 export function modal(title, build, { wide = false, cls = "" } = {}) {
-  if (native.on) return nativeModal(title, build, { wide, cls });
   return new Promise((resolve) => {
     const prev = document.activeElement;
     const close = (v) => { back.remove(); prev?.focus?.(); resolve(v); };
@@ -175,10 +155,6 @@ export async function saveHosts() {
  * items: { label, icon, action, disabled, danger } or "-" (separator).
  */
 export function contextMenu(e, items) {
-  // Keyboard-opened menus (Shift+F10, menu key) have no pointer position: anchor on the element.
-  const r = e.target.getBoundingClientRect?.(), keyb = !e.clientX && !e.clientY && r;
-  const x = keyb ? r.left : e.clientX, y = keyb ? r.bottom : e.clientY;
-  if (native.on) return nativeMenu(x, y, items);
   document.querySelector(".ctx-menu")?.remove();
   const prev = document.activeElement;
   const done = () => { menu.remove(); removeEventListener("mousedown", outside, true); removeEventListener("keydown", key, true); removeEventListener("blur", done); removeEventListener("resize", done); };
@@ -198,6 +174,9 @@ export function contextMenu(e, items) {
     ev.preventDefault(); ev.stopPropagation();
   };
   document.body.append(menu);
+  // Keyboard-opened menus (Shift+F10, menu key) have no pointer position: anchor on the element.
+  const r = e.target.getBoundingClientRect?.(), keyb = !e.clientX && !e.clientY && r;
+  const x = keyb ? r.left : e.clientX, y = keyb ? r.bottom : e.clientY;
   menu.style.left = Math.max(4, Math.min(x, innerWidth - menu.offsetWidth - 4)) + "px";
   menu.style.top = Math.max(4, y + menu.offsetHeight > innerHeight - 4 ? y - menu.offsetHeight : y) + "px";
   if (keyb) menu.querySelector("button:not(:disabled)")?.focus();

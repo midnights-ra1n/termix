@@ -189,8 +189,7 @@ fn synced_settings(s: &Settings) -> Value {
     json!({ "appearance": s.appearance, "terminal": s.terminal, "keybindings": keys, "themes": s.themes })
 }
 
-/// Apple keyboards (macOS, iPad): Cmd is the main modifier.
-pub const MAC: bool = cfg!(any(target_os = "macos", target_os = "ios"));
+const MAC: bool = cfg!(target_os = "macos");
 
 /// Shortcuts travel with "Mod" for the system's main modifier: Cmd on macOS, Ctrl+Shift elsewhere
 /// (plain Ctrl keys belong to the remote shell), so Cmd+T on a Mac is Ctrl+Shift+T on Windows/Linux.
@@ -395,6 +394,8 @@ pub fn apply(store: &mut Store, vault: Option<&Vault>, settings: &Settings) -> R
             .filter(|(k, _)| k.starts_with("secret:") || k.starts_with("key:"))
             .map(|(k, r)| (k.clone(), r.v.clone()))
             .collect();
+        // A key moved back to "this device only" leaves a tombstone that must not wipe it here.
+        let local: BTreeSet<String> = config::local_keys().into_iter().map(|k| format!("key:{}", k.id)).collect();
         for (k, v) in keys {
             // Secrets live under their host id, keys under "key:<id>".
             let slot = k.strip_prefix("secret:").unwrap_or(&k).to_string();
@@ -410,7 +411,7 @@ pub fn apply(store: &mut Store, vault: Option<&Vault>, settings: &Settings) -> R
                     }
                 }
                 None => {
-                    if config::secret_get(&slot).is_some() {
+                    if !local.contains(&k) && config::secret_get(&slot).is_some() {
                         let _ = config::secret_set(&slot, "");
                     }
                     store.local_secrets.remove(&k);

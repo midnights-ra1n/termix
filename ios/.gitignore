@@ -1,0 +1,5 @@
+# Generated from project.yml: xcodegen (see README)
+Termix.xcodeproj/
+core/target/
+build/
+Termix/Info.plist

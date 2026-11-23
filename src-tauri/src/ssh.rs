@@ -25,15 +25,28 @@ impl client::Handler for Client {
         let PublicKeyOrCertificate::PublicKey { key, .. } = key else {
             bail!("certificats d'hôte non pris en charge");
         };
-        match russh::keys::check_known_hosts(&self.host, self.port, key) {
+        let file = known_hosts_file();
+        let known = match &file {
+            Some(f) => russh::keys::check_known_hosts_path(&self.host, self.port, key, f),
+            None => russh::keys::check_known_hosts(&self.host, self.port, key),
+        };
+        match known {
             Ok(true) => Ok(true),
             Ok(false) => {
-                let _ = russh::keys::known_hosts::learn_known_hosts(&self.host, self.port, key);
+                let _ = match &file {
+                    Some(f) => russh::keys::known_hosts::learn_known_hosts_path(&self.host, self.port, key, f),
+                    None => russh::keys::known_hosts::learn_known_hosts(&self.host, self.port, key),
+                };
                 Ok(true)
             }
             Err(e) => bail!("clé d'hôte modifiée pour {} ({e}) — vérifiez ~/.ssh/known_hosts", self.host),
         }
     }
+}
+
+/// OpenSSH's ~/.ssh/known_hosts (None), except on iOS where the home folder itself is read-only.
+fn known_hosts_file() -> Option<PathBuf> {
+    cfg!(target_os = "ios").then(|| crate::config::dir().join("known_hosts"))
 }
 
 pub enum Cmd {
@@ -239,14 +252,15 @@ fn whoami() -> String {
     std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "root".into())
 }
 
-/// Opens the PTY shell and pumps output to `on_data`. Returns the session handle.
+/// Opens the PTY shell and pumps output to `on_data`. Returns the session handle. `on_close(ended)`: true when the
+/// server ended the shell (exit, kill), false when the connection was lost.
 pub async fn open_shell(
     handle: Handle<Client>,
     cols: u32,
     rows: u32,
     tmux: Option<&str>,
     on_data: impl Fn(Vec<u8>) + Send + 'static,
-    on_close: impl FnOnce() + Send + 'static,
+    on_close: impl FnOnce(bool) + Send + 'static,
 ) -> Result<Arc<Session>> {
     let mut ch = handle.channel_open_session().await?;
     ch.request_pty(false, "xterm-256color", cols, rows, 0, 0, &[]).await?;
@@ -258,23 +272,25 @@ pub async fn open_shell(
     let handle = Arc::new(handle);
     let h2 = handle.clone();
     tokio::spawn(async move {
+        let mut ended = true;
         loop {
             tokio::select! {
                 msg = ch.wait() => match msg {
                     Some(ChannelMsg::Data { data }) => on_data(data.to_vec()),
                     Some(ChannelMsg::ExtendedData { data, .. }) => on_data(data.to_vec()),
-                    Some(ChannelMsg::Eof | ChannelMsg::Close) | None => break,
+                    Some(ChannelMsg::Eof | ChannelMsg::Close) => break,
+                    None => { ended = false; break }
                     _ => {}
                 },
                 cmd = rx.recv() => match cmd {
-                    Some(Cmd::Data(d)) => { if ch.data(&d[..]).await.is_err() { break } }
+                    Some(Cmd::Data(d)) => { if ch.data(&d[..]).await.is_err() { ended = false; break } }
                     Some(Cmd::Resize(c, r)) => { let _ = ch.window_change(c, r, 0, 0).await; }
                     Some(Cmd::Close) | None => { let _ = ch.close().await; break }
                 },
             }
         }
         let _ = h2.disconnect(Disconnect::ByApplication, "", "").await;
-        on_close();
+        on_close(ended);
     });
     Ok(Arc::new(Session { tx, handle, sftp: OnceCell::new() }))
 }

@@ -152,7 +152,7 @@ pub struct Terminal {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct WindowStyle {
-    /// none | macOS: vibrancy, liquid_glass | Windows: acrylic, mica | Linux (KDE Plasma): blur | iOS: liquid_glass
+    /// none | macOS: vibrancy, liquid_glass | Windows: acrylic, mica | Linux (KDE Plasma): blur
     pub material: String,
     /// Opacity of the interface (side bars, title bar) over the material, 0-100.
     pub interface_opacity: u32,
@@ -165,8 +165,7 @@ impl Default for WindowStyle {
 }
 
 impl WindowStyle {
-    /// The material, if the system draws it (iOS draws its glass in CSS, see style.css).
-    #[cfg(desktop)]
+    /// The material, if it exists on this system.
     pub fn active(&self) -> Option<&str> {
         let ok: &[&str] = if cfg!(target_os = "macos") { &["vibrancy", "liquid_glass"] } else if cfg!(windows) { &["acrylic", "mica"] } else { &["blur"] };
         ok.contains(&self.material.as_str()).then_some(self.material.as_str())
@@ -297,7 +296,7 @@ pub fn default_keybindings() -> BTreeMap<String, String> {
         ("clear_screen", "Alt+K"), // Cmd+Option+K like macOS Terminal
     ]
     .into_iter()
-    .map(|(a, k)| (a.to_string(), crate::sync::native_key(&format!("Mod+{k}"), crate::sync::MAC)))
+    .map(|(a, k)| (a.to_string(), crate::sync::native_key(&format!("Mod+{k}"), cfg!(target_os = "macos"))))
     .collect()
 }
 
@@ -405,6 +404,22 @@ pub fn recent_push(id: &str) {
     if let Ok(json) = serde_json::to_vec(&v) {
         let _ = write_atomic(&dir().join("recent.json"), &json);
     }
+}
+
+/// An SSH key kept on this device only (keys.json); its PEM is in the keychain as "key:<id>", like synced keys.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LocalKey {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "pub")]
+    pub public: String,
+}
+
+pub fn local_keys() -> Vec<LocalKey> {
+    std::fs::read_to_string(dir().join("keys.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+pub fn save_local_keys(keys: &[LocalKey]) -> anyhow::Result<()> {
+    write_atomic(&dir().join("keys.json"), &serde_json::to_vec_pretty(keys)?)
 }
 
 /// Hosts for the tray menu according to the user's choice; favorites fall back to recent, then to all.

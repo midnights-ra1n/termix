@@ -1,10 +1,8 @@
-// Settings → Sync: server or local-network sync, the end-to-end encrypted vault and synced SSH keys.
+// Settings → Sync: server or local-network sync and the end-to-end encrypted vault (keys: Settings → SSH keys).
 // Every action goes straight to the backend; nothing here waits for the settings "Save" button.
-import { confirm } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { h, icon, invoke, field, toast, modal, openDialog } from "./ui.js";
+import { h, icon, invoke, field, toast, modal } from "./ui.js";
 import { t } from "./i18n.js";
-import { refreshChrome } from "./native.js";
 
 const when = (ms) => (ms ? new Date(ms).toLocaleString() : t("sync_never"));
 let shownCode = null; // { code, until }: survives redraws while it is valid
@@ -44,7 +42,7 @@ export function syncView() {
     if (st.conflicts.length) parts.push(conflictsPart(st, draw));
     if (st.mode === "server") parts.push(serverPart(st, draw));
     if (st.mode === "p2p") parts.push(p2pPart(st, draw));
-    if (st.mode === "p2p" || (st.mode === "server" && st.logged_in)) parts.push(vaultPart(st, draw), await keysPart(st, draw), statusLine(st, draw));
+    if (st.mode === "p2p" || (st.mode === "server" && st.logged_in)) parts.push(vaultPart(st, draw), statusLine(st, draw));
     root.replaceChildren(...parts);
   };
   draw().catch((x) => root.replaceChildren(h("p.error", {}, t("sync_error", x))));
@@ -84,27 +82,6 @@ function vaultPart(st, draw) {
   pass.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); unlock(); } };
   return h("div.sync-box", {}, h("h4", {}, t("vault_title")), h("p.mute.small", {}, st.vault_exists ? t("vault_hint") : t("vault_hint_new")),
     h("div.inline", {}, pass, h("button.btn.primary.small", { type: "button", onclick: unlock }, st.vault_exists ? t("vault_unlock") : t("vault_create"))));
-}
-
-async function keysPart(st, draw) {
-  const keys = await invoke("sync_keys");
-  const add = act(async () => {
-    const path = await openDialog({ title: t("sync_key_add"), defaultPath: "~/.ssh" });
-    if (!path) return;
-    await invoke("sync_key_import", { path, name: path.split(/[\\/]/).pop() });
-    await draw();
-  });
-  const del = (k) => act(async () => {
-    if (!(await confirm(t("sync_key_delete", k.name), { kind: "warning" }))) return;
-    await invoke("sync_key_delete", { id: k.id });
-    await draw();
-  });
-  return h("div.sync-box", {}, h("h4", {}, t("sync_keys")), h("p.mute.small", {}, st.unlocked ? t("sync_keys_hint") : t("sync_key_locked")),
-    h("ul.items", {}, ...(keys.length
-      ? keys.map((k) => h("li.item", {}, h("div.item-text", {}, h("strong", {}, k.name || k.id), h("small.item-meta.mono", {}, (k.pub || "").slice(0, 56))),
-        h("button.btn.ghost.small", { type: "button", disabled: !st.unlocked, onclick: del(k) }, t("delete").replace(/…$/, ""))))
-      : [h("li.mute.small", {}, t("sync_key_none"))])),
-    h("div.actions", {}, h("button.btn.small", { type: "button", disabled: !st.unlocked, onclick: add }, t("sync_key_add"))));
 }
 
 function askCode(name) {
@@ -184,14 +161,12 @@ export function initSyncStatus(btn, openSync) {
   const render = (s) => {
     st = s;
     btn.hidden = s.mode === "off" || !s.mode;
-    refreshChrome(); // iOS shows it in the native title bar (main.js reads the button)
     if (btn.hidden) return;
     const [name, cls, text] = s.conflicts.length ? ["syncConflict", "warn", t("sync_n_conflicts", s.conflicts.length)]
       : s.syncing ? ["syncing", "", t("sync_running")]
       : s.last_error ? ["syncOff", "error", t("sync_error", s.last_error)]
       : ["syncOk", "", t("sync_last", when(s.last_ok))];
     btn.className = "icon-btn " + cls;
-    btn.dataset.icon = name;
     btn.replaceChildren(icon(name, 16));
     btn.title = text;
     btn.setAttribute("aria-label", text);

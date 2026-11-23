@@ -27,14 +27,14 @@ Rust (Tauri v2, russh) and xterm.js. No telemetry, no account required.</p>
 ## Features
 
 - **Hosts**: folders and subfolders with drag and drop, tags, search, favorites, built-in icons, live status (SSH, ping only, down), JSON import and export
-- **Authentication**: SSH agent (Bitwarden, 1Password, KeePassXC, Proton Pass, Secretive… found through `~/.ssh/config` and your shell), key files, passwords in the system keychain
+- **Authentication**: SSH agent (Bitwarden, 1Password, KeePassXC, Proton Pass, Secretive… found through `~/.ssh/config` and your shell), key files, passwords in the system keychain, and an SSH key manager where each key stays on the device or syncs end-to-end encrypted
 - **Terminal**: tabs, splits right, left, down and up, keyboard shortcuts per platform, command suggestions, copy on select, zoom
 - **Persistent sessions** (optional): shells can run inside tmux when the server has it, so jobs keep running after you disconnect and you resume them from the side panel
 - **Side panel**: server stats (CPU, memory, disk, network, load average), SFTP browser, Docker containers and their state, tmux sessions
 - **Sync**: hosts, folders, settings, passwords, SSH keys and open tabs between your devices, through a self-hosted server or directly on the local network. Passwords and keys are end-to-end encrypted
 - **Customization**: 24 built-in themes plus your own, 11 bundled fonts (5 sans for the interface, 6 mono for the terminal) or any installed one, accent color, density, cursor, padding, letter spacing, everything from the GUI or a TOML file
 - **Desktop integration**: native macOS menu bar (same menus in the custom title bar on Windows and Linux, with Windows-style window buttons and the system's rounded corners), tray icon that turns white or black to match the panel, native tray menu on macOS, GNOME, KDE and Windows with your hosts one click away, optional background mode for instant reopening, native Wayland
-- **iPhone and iPad**: the same app, themes and settings, with a native SwiftUI interface in Liquid Glass (title bar, menus, settings and editors, notifications), the host list and the side panel as drawers on the phone, a key bar (Esc, Tab, Ctrl, arrows, paste) above the keyboard and long press for the context menus
+- **iPhone and iPad**: a native SwiftUI app on the same Rust core: host tree with search, tags, favorites and live status, quick connect and recent sessions, terminal with the desktop themes, a full key bar, pinch to zoom and automatic reconnection, tmux sessions that survive iOS suspending the app, the side panel (stats, SFTP, Docker, tmux), the desktop's open tabs to carry on, SSH keys, server sync with the encrypted vault, keyboard shortcuts on iPad
 - **Updates**: automatic and manual, from GitHub releases, on the stable, beta or nightly channel
 - **Languages**: English, French, Spanish, German
 
@@ -47,13 +47,15 @@ Download the build for your system from the [releases page](https://github.com/m
 | macOS 11+ | `.dmg` | Apple silicon, Intel |
 | Windows 10+ | `-setup.exe` | x64, arm64 |
 | Linux | `.deb`, `.rpm`, `.AppImage` | x86_64, aarch64 |
-| iOS / iPadOS 26+ | built from source with Xcode (see [iPhone and iPad](#iphone-and-ipad)) | arm64 |
+| iOS / iPadOS 26+ | `_iOS.ipa` (unsigned, to sideload) | arm64 |
 
 **macOS**: the app is not notarized. The first time, right-click Termix in Applications and choose Open, or run:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Termix.app
 ```
+
+**iPhone and iPad**: the `.ipa` is not signed. Install it with [Sideloadly](https://sideloadly.io), [AltStore](https://altstore.io) or [SideStore](https://sidestore.io), which sign it with your Apple ID (with a free account, the app must be refreshed every 7 days). To build it yourself, see [iPhone and iPad](#iphone-and-ipad).
 
 **Linux**: install the package with your package manager (the `.rpm` is not GPG-signed; updates are checked with Termix's own signature instead):
 
@@ -81,13 +83,24 @@ Already using Termix under its former name? Settings, hosts and keychain secrets
 
 For each connection Termix tries, in order:
 
-1. the host's key file, or its synced key (see [Sync](#sync))
-2. the SSH agent
+1. the SSH agent
+2. the host's key file, or its saved key (see [SSH keys](#ssh-keys))
 3. the password saved in the system keychain, otherwise it asks
 
 The agent is found without setup. Termix reads `IdentityAgent` from `~/.ssh/config` and `SSH_AUTH_SOCK` as set by your `.zshrc`, `.bashrc` or fish config, so the agent of Bitwarden, 1Password, KeePassXC, Proton Pass or Secretive works as it does in your usual terminal. Settings → SSH lists the agents it found and lets you force one. A forced socket that is not running falls back to automatic detection.
 
-You can also import a private key file (it is copied to Termix's `keys/` folder with mode 0600) or point to one anywhere on disk.
+### SSH keys
+
+Settings → SSH keys lists the private keys Termix keeps in the system keychain. Add one from a file or paste its text (on iOS: Settings → SSH keys, or **Add a key** in the host editor). Pasting a key into the host's **Private key** field imports it too. Then pick it in the host's **Saved key** field; a key file set on the host still takes precedence.
+
+Each key is either:
+
+- **on this device only**: it never leaves it, or
+- **synced**: sealed in the [vault](#the-vault) (end-to-end encrypted) and written to the keychain of your other devices.
+
+Flip one key with its switch (a swipe on iOS), or all of them at once with **Sync all** / **Keep all on this device**. A key keeps its id when it moves, so the hosts using it don't change. Keeping a synced key on one device removes it from the server and from the other devices. New keys sync when the vault is unlocked, unless you turn the switch off when adding them.
+
+You can also point the **Private key** field to a key file anywhere on disk.
 
 ## Tabs, splits and tmux
 
@@ -154,7 +167,7 @@ The vault key is kept in the system keychain of each device, so you only enter t
 
 ### Synced SSH keys
 
-Settings → Sync → Import a key stores a private key in the vault. Every device writes it to its keychain, and the host editor gets a **Synced key** field to pick it for a host. A key file set on the host takes precedence.
+Keys marked as synced in Settings → SSH keys are sealed in the vault, and every device writes them to its keychain. See [SSH keys](#ssh-keys) to keep one on a single device instead.
 
 ### Resuming a workspace
 
@@ -297,23 +310,31 @@ node scripts/check-i18n.mjs                            # every language has ever
 
 | Path | |
 |---|---|
-| `src/` | interface (vanilla JS, xterm.js), shared by the desktop and iOS |
+| `src/` | interface (vanilla JS, xterm.js) |
 | `src-tauri/src/` | app backend: SSH (`ssh.rs`), settings (`config.rs`), sync (`sync.rs`, `syncd.rs`, `p2p.rs`) |
 | `sync-server/` | `termix-sync` server and its web interface |
 | `docs/` | configuration reference |
-| `src-tauri/gen/apple/` | iOS Xcode project (`Info.plist`, launch screen, icons) |
-| `src-tauri/plugins/native-ui/` | iOS interface in SwiftUI (title bar, key bar, menus, sheets, toasts), driven by `src/native.js` |
+| `ios/` | native iOS and iPadOS app: SwiftUI interface (`Termix/`), Rust core as a static library (`core/`) |
 
 ### iPhone and iPad
 
-The iOS app is the same Tauri project. The terminal and the lists stay in the page (`src/`); the chrome is SwiftUI with Liquid Glass (`src-tauri/plugins/native-ui`): title bar, key bar, menus, toasts, and every dialog. Dialogs are still built by the shared code: `src/native.js` turns their form into a native sheet (pickers, sliders, switches, fields) and writes what the user changes back into it, so a setting added for the desktop shows up on iOS too. What only makes sense on a computer (menu bar, tray icon, background mode, self-update, SSH agents, shortcut editing) is left out. iOS 26 or later. Extra requirements: Xcode, `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`, `brew install xcodegen cocoapods`.
+A native app in `ios/` (iOS 26 or later), separate from the Tauri project. The interface is SwiftUI with [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for the terminal; the logic is the desktop's Rust: `ios/core` compiles `config.rs`, `ssh.rs`, `sync.rs`, `p2p.rs` and `syncd.rs` unchanged into a static library behind a three-function C API (`ios/Termix/Bridging.h`), with `ios/core/tauri-shim` standing in for the few Tauri items `syncd.rs` uses. Same hosts file, keychain secrets and sync format, so a phone joins your sync account like another computer.
+
+Requirements: Xcode, `brew install xcodegen`, `rustup target add aarch64-apple-ios`. Xcode runs `cargo` itself during the build (`ios/core/build.sh`).
 
 ```sh
-pnpm tauri ios dev "iPhone 17"                          # simulator (or a plugged-in device)
-pnpm tauri ios build --export-method debugging         # .ipa signed with your team (APPLE_DEVELOPMENT_TEAM)
+cd ios && xcodegen                                      # Termix.xcodeproj from project.yml
+open Termix.xcodeproj                                   # choose your team under Signing & Capabilities, then Run on the iPhone
+xcodebuild -project Termix.xcodeproj -scheme Termix -destination generic/platform=iOS \
+  -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build    # compile check (CI)
+node scripts/ios-themes.mjs                             # after a change to src/themes.js
 ```
 
-Updates come from a new build (Xcode, TestFlight), not from GitHub releases. SFTP downloads and host exports land in the Files app › Termix. Local network discovery for peer-to-peer sync needs Apple's multicast entitlement (`com.apple.developer.networking.multicast`) on a real device; sync through a server works without it.
+The first build in Xcode asks you to trust SwiftTerm's build plugin. The theme syncs; the terminal font and size belong to each device. SFTP downloads land in Files › Termix. Not on iOS: SSH agents, splits, peer-to-peer sync on the local network (it needs Apple's multicast entitlement), and shells running in the background: iOS suspends the app about 30 seconds after you leave it. Lost connections reconnect when you come back, and with tmux (Settings → Terminal, or per host) the shell keeps running on the server and is resumed as it was.
+
+In the terminal, tap the title to switch sessions, pinch to change the text size, and use the key bar (Esc, Ctrl and Alt for the next key, Tab, arrows that repeat when held, ^C, ^D, ^Z, symbols, PgUp/PgDn, F1-F12, paste). The panel button (top right) opens the server panel: a column on iPad, a sheet on iPhone. The host list shows each host's status, your recent sessions and the sessions open on your computers (**Resume the sessions of …**, tmux included); your iPhone's sessions show up on the computer the same way.
+
+iPad keyboard shortcuts: ⌘N new host, ⌘K quick connect, ⌘T new session on the same host, ⌘⇧W close the session, ⌘] / ⌘[ next / previous session, ⌘I server panel, ⌘= / ⌘- / ⌘0 text size.
 
 ## Branches and releases
 

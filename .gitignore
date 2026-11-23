@@ -1,6 +1,5 @@
 node_modules/
 dist/
 src-tauri/target/
-# gen/apple is the iOS Xcode project (tauri ios init): kept in git, its build output is ignored there.
-src-tauri/gen/schemas/
+src-tauri/gen/
 .DS_Store

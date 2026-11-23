@@ -129,6 +129,40 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
+  # Unsigned IPA: Sideloadly, AltStore or SideStore sign it with the user's Apple ID when installing.
+  ios:
+    needs: prepare
+    if: needs.prepare.outputs.channel != 'skip'
+    runs-on: macos-26 # Xcode 26: the app targets iOS 26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ios/core
+      - run: brew install xcodegen
+      - working-directory: ios
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          xcodegen
+          # iOS wants a numeric version (1.2.1): the channel suffix goes, the run number tells builds apart.
+          xcodebuild -project Termix.xcodeproj -scheme Termix -configuration Release -destination generic/platform=iOS \
+            -derivedDataPath build -skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="${VERSION%%-*}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" build
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/Termix.app Payload/
+          ipa="Termix_${VERSION}_iOS.ipa"
+          zip -qry "$ipa" Payload
+          gh release upload "$TAG" "$ipa" --clobber
+
   # One job writes latest.json once every platform is uploaded (parallel jobs would overwrite each other).
   updater:
     needs: [prepare, build]

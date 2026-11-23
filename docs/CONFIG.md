@@ -6,7 +6,8 @@ Tout ce qui est réglable dans **Réglages** (⌘, sur macOS, Ctrl+Shift+, aille
 |---|---|
 | `config.toml` | apparence, terminal, comportement, agent SSH, raccourcis, thèmes perso |
 | `hosts.json` | dossiers et hôtes (sans aucun secret) |
-| `keys/` | clés privées importées (droits 0600) |
+| `keys.json` | clés SSH gardées sur cet appareil seulement : nom et clé publique (la clé privée est dans le trousseau) |
+| `keys/` | clés privées importées par les versions précédentes (droits 0600), toujours utilisables comme fichier de clé |
 
 Emplacement du dossier :
 
@@ -14,7 +15,7 @@ Emplacement du dossier :
 - Linux : `~/.config/termix/`
 - Windows : `%APPDATA%\termix\`
 
-Les **mots de passe** et **phrases de passe** des clés ne sont jamais écrits sur disque par Termix : ils vont dans le trousseau du système (Trousseau macOS, Secret Service/GNOME Keyring/KWallet, Gestionnaire d'identifiants Windows).
+Les **mots de passe**, les **clés privées** de Réglages → Clés SSH et les **phrases de passe** des clés ne sont jamais écrits sur disque par Termix : ils vont dans le trousseau du système (Trousseau macOS, Secret Service/GNOME Keyring/KWallet, Gestionnaire d'identifiants Windows).
 
 Les clés absentes du fichier gardent leur valeur par défaut ; un fichier invalide est ignoré (message sur la sortie d'erreur) et les valeurs par défaut sont utilisées. Le fichier est réécrit quand on enregistre depuis les Réglages : les commentaires ne sont donc pas conservés. Relancez l'app après une modification manuelle.
 
@@ -79,8 +80,7 @@ background_image_y = "center"    # top, center, bottom
 
 [window]                     # propre à cet appareil, jamais synchronisé (chaque système a ses matériaux)
 material = "none"            # none ; macOS : vibrancy, liquid_glass (macOS 26+, vibrancy avant) ;
-                             # Windows : acrylic, mica (Windows 11, acrylic sous Windows 10) ; Linux : blur (KDE Plasma) ;
-                             # iOS : liquid_glass (verre dessiné par Termix sur un fond aux couleurs du thème)
+                             # Windows : acrylic, mica (Windows 11, acrylic sous Windows 10) ; Linux : blur (KDE Plasma)
 interface_opacity = 75       # opacité des barres latérales et de la barre de titre par-dessus le matériau (20 à 100)
                              # (macOS / Windows : la fenêtre devient transparente au prochain lancement)
 
@@ -126,7 +126,7 @@ Avec `agent_socket` vide, l'agent est trouvé ainsi :
 
 Ça couvre Bitwarden, 1Password, KeePassXC, Proton Pass, Secretive, GNOME Keyring ou `ssh-agent`, sans rien installer. Les Réglages listent les sockets détectés pour en choisir un explicitement.
 
-Les clés d'hôte sont vérifiées dans `~/.ssh/known_hosts` (même politique que `StrictHostKeyChecking=accept-new` : un hôte inconnu est appris, une clé modifiée est refusée).
+Les clés d'hôte sont vérifiées dans `~/.ssh/known_hosts` (même politique que `StrictHostKeyChecking=accept-new` : un hôte inconnu est appris, une clé modifiée est refusée) ; sur iOS, dans le fichier `known_hosts` du dossier de configuration de l'app.
 
 ## Raccourcis
 

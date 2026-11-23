@@ -18,7 +18,24 @@ jobs:
       - run: node scripts/check-i18n.mjs && node scripts/check-suggest.mjs
       - run: pnpm build
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml
-      # The iOS app shares the backend: it must keep compiling without the desktop-only parts.
-      - if: runner.os == 'macOS'
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --target aarch64-apple-ios
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # Native iOS app: compile check only (no simulator, no signing).
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: themes.json matches src/themes.js
+        run: node scripts/ios-themes.mjs && git diff --exit-code ios/Termix/themes.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ios/core
+      - run: brew install xcodegen
+      - working-directory: ios
+        run: |
+          xcodegen
+          xcodebuild -project Termix.xcodeproj -scheme Termix -destination generic/platform=iOS -derivedDataPath build \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
