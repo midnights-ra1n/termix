@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { S, h, icon, invoke, modal, field, toast, statusDot, uid, saveHosts, contextMenu } from "./ui.js";
+import { S, h, icon, invoke, modal, field, toast, statusDot, uid, saveHosts, contextMenu, hostIcon } from "./ui.js";
 import { t as tr } from "./i18n.js";
 import { Suggest } from "./suggest.js";
 import logo from "../assets/icon-rounded.svg";
@@ -44,7 +44,7 @@ class Pane {
     const draw = () => {
       const q = input.value.toLowerCase();
       list.replaceChildren(...S.hosts.hosts.filter((x) => !q || (x.name + x.host + x.tags.join(" ")).toLowerCase().includes(q)).slice(0, 30)
-        .map((x) => h("button.row.host", { onclick: () => this.connect(x) }, statusDot(x.id), icon(x.icon || "server", 15), h("span.name", {}, x.name), h("span.mute.mono", {}, x.host))));
+        .map((x) => h("button.row.host", { onclick: () => this.connect(x) }, statusDot(x.id), hostIcon(x, 15), h("span.name", {}, x.name), h("span.mute.mono", {}, x.host))));
     };
     input.oninput = draw;
     input.onkeydown = (e) => { if (e.key === "Enter") list.querySelector("button")?.click(); };
@@ -55,6 +55,7 @@ class Pane {
   }
   async connect(host, password = null) {
     this.host = host;
+    this.password = password; // kept for automatic reconnects when it wasn't saved
     // Kept across reconnects (Enter after a drop) so the same tmux session is reattached.
     if (this.tmux === undefined) this.tmux = wantsTmux(host) ? tmuxName() : null;
     this.el.replaceChildren(h("div.connecting", { role: "status" }, h("span.dot"), tr("connecting", host.name)));
@@ -83,11 +84,11 @@ class Pane {
     if (S.settings.performance.gpu) this.gpu();
     // Shells and tmux send DECRST 12 (terminfo cnorm), which would stop the blink for good: the setting wins.
     for (const final of ["h", "l"]) term.parser.registerCsiHandler({ prefix: "?", final }, (p) => p.length === 1 && p[0] === 12);
-    term.onData((d) => invoke("ssh_write", { id: this.session, data: d }).catch(() => {}));
+    term.onData((d) => this.session && invoke("ssh_write", { id: this.session, data: d }).catch(() => {}));
     term.onResize(({ cols, rows }) => invoke("ssh_resize", { id: this.session, cols, rows }).catch(() => {}));
     term.onSelectionChange(() => S.settings.terminal.copy_on_select && term.hasSelection() && navigator.clipboard.writeText(term.getSelection()));
     const id = this.session;
-    this.suggest = new Suggest(term, host.id, (d) => invoke("ssh_write", { id, data: d }).catch(() => {}), () => S.settings.terminal.suggestions);
+    this.suggest = new Suggest(term, host.id, (d) => this.session && invoke("ssh_write", { id: this.session, data: d }).catch(() => {}), () => S.settings.terminal.suggestions);
     invoke("ssh_history", { id }).then((list) => this.suggest?.setRemote(list), () => {});
     term.attachCustomKeyEventHandler((e) => {
       if (!this.suggest.handleKey(e)) return false;
@@ -121,12 +122,61 @@ class Pane {
     this.el.replaceChildren(h("div.picker", {}, h("h3.error", {}, tr("failed", host.name)), h("p.mute", {}, msg),
       h("div.inline", {}, h("button.btn.primary", { onclick: () => this.connect(host) }, tr("retry")), h("button.btn", { onclick: () => this.picker() }, tr("other_host")))));
   }
-  closed() {
+  /** `ended`: the shell exited; otherwise the connection dropped and, if enabled, comes back by itself. */
+  closed(ended) {
     bySession.delete(this.session);
     this.session = null;
-    this.term?.write(`\r\n\x1b[2m${tr("conn_closed")}\x1b[0m\r\n`);
-    const t = this.term;
-    const sub = t?.onKey(({ domEvent }) => { if (domEvent.key === "Enter") { sub.dispose(); this.dispose(); this.connect(this.host); } });
+    events.dispatchEvent(new Event("focus"));
+    if (!this.term) return;
+    this.autoRetry = !ended && S.settings.ssh.auto_reconnect;
+    this.retries = 0;
+    // Back to the main screen with mouse reporting off, or a dropped vim/htop/tmux leaves the terminal unusable.
+    this.term.write("\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[!p");
+    this.note(ended ? "conn_closed" : this.autoRetry ? "conn_lost_auto" : "conn_lost");
+    this.keySub?.dispose();
+    this.keySub = this.term.onKey(({ domEvent }) => {
+      if (domEvent.key === "Enter") this.reconnect();
+      else if (domEvent.key === "Escape" && this.autoRetry) { this.autoRetry = false; this.stopRetry(); this.note("reconnect_stopped"); }
+    });
+    if (this.autoRetry) this.scheduleRetry();
+  }
+  note(key, ...args) { this.term?.write(`\r\n\x1b[2m${tr(key, ...args)}\x1b[0m\r\n`); }
+  scheduleRetry() {
+    if (this.retries >= 30) { this.autoRetry = false; return this.note("reconnect_gave_up"); } // about a quarter of an hour
+    const secs = [1, 2, 5, 10, 20, 30][Math.min(this.retries, 5)];
+    this.retryTimer = setTimeout(() => this.reconnect(), secs * 1000);
+  }
+  stopRetry() { clearTimeout(this.retryTimer); this.retryTimer = null; }
+  /** New SSH session in the same terminal (scrollback kept), reattaching its tmux session if it had one. */
+  async reconnect() {
+    this.stopRetry();
+    const term = this.term, host = this.host;
+    if (!term || this.session || this.reconnecting) return;
+    this.reconnecting = true;
+    this.retries++;
+    this.note("reconnecting", host.name, this.retries);
+    const ch = new Channel();
+    ch.onmessage = (buf) => term.write(new Uint8Array(buf));
+    let id;
+    try {
+      id = await invoke("ssh_connect", { hostId: host.id, host: host.id.startsWith("quick:") ? host : null, cols: term.cols, rows: term.rows, password: this.password, tmux: this.tmux, onData: ch });
+    } catch (e) {
+      this.reconnecting = false;
+      if (this.term !== term) return; // closed meanwhile
+      if (String(e).includes("NEED_PASSWORD")) { this.dispose(); return this.askPassword(host); }
+      this.note("reconnect_failed", String(e));
+      if (this.autoRetry) this.scheduleRetry();
+      return;
+    }
+    this.reconnecting = false;
+    if (this.term !== term) return void invoke("ssh_close", { id }); // closed meanwhile
+    this.session = id;
+    this.autoRetry = false;
+    this.keySub?.dispose();
+    this.keySub = null;
+    bySession.set(id, this);
+    this.refit();
+    invoke("ssh_resize", { id, cols: term.cols, rows: term.rows }).catch(() => {});
     events.dispatchEvent(new Event("focus"));
   }
   contextMenu(e) {
@@ -168,13 +218,16 @@ class Pane {
     } catch { this.webgl = null; }
   }
   dispose() {
+    this.stopRetry();
+    this.keySub?.dispose();
+    this.keySub = null;
     if (this.session) invoke("ssh_close", { id: this.session });
     bySession.delete(this.session);
     this.ro?.disconnect();
     this.suggest?.dispose();
     this.suggest = null;
     this.term?.dispose(); // also disposes its addons (WebGL context included)
-    this.term = this.fit = this.webgl = null;
+    this.term = this.fit = this.webgl = this.session = null;
   }
 }
 
@@ -287,7 +340,7 @@ function welcome() {
   invoke("recent_sessions").then((ids) => {
     const list = ids.map((id) => (id.startsWith("quick:") ? quickHost(id.slice(6)) : S.hosts.hosts.find((x) => x.id === id))).filter(Boolean).slice(0, 5);
     if (list.length) recent.replaceChildren(h("li.recent-title", {}, tr("recent_sessions")), ...list.map((x) => h("li", {},
-      h("button.row.host", { onclick: () => newTab(x) }, statusDot(x.id), icon(x.icon || "server", 15), h("span.name", {}, x.name),
+      h("button.row.host", { onclick: () => newTab(x) }, statusDot(x.id), hostIcon(x, 15), h("span.name", {}, x.name),
         h("span.mute.mono", {}, `${x.user ? x.user + "@" : ""}${x.host}`)))));
   }).catch(() => {});
   invoke("sync_workspaces").then((list) => resume.replaceChildren(...list.slice(0, 3).map((ws) =>
@@ -482,5 +535,7 @@ function applyBackground() {
 /** Clears the focused terminal (menu, shortcut, title bar button). */
 export const clearScreen = () => current?.focused?.clearScreen();
 
-listen("ssh-closed", (e) => bySession.get(e.payload)?.closed());
+listen("ssh-closed", (e) => { const [id, ended] = e.payload; bySession.get(id)?.closed(ended); });
+// Network back (Wi-Fi, VPN, wake from sleep): waiting panes retry now instead of at their next attempt.
+addEventListener("online", () => tabs.forEach((tab) => leaves(tab.root).forEach((p) => p.retryTimer && p.reconnect())));
 export const initPanes = render;

@@ -397,6 +397,9 @@ pub struct Entry {
     pub dir: bool,
     pub size: u64,
     pub modified: u64,
+    /// Unix mode bits (0o755…), 0 when the server doesn't say.
+    pub perm: u32,
+    pub link: bool,
 }
 
 impl Session {
@@ -420,6 +423,8 @@ pub async fn sftp_list(s: &SftpSession, path: &str) -> Result<(String, Vec<Entry
             let m = e.metadata();
             Entry {
                 dir: m.is_dir(),
+                link: m.is_symlink(),
+                perm: m.permissions.unwrap_or(0) & 0o7777,
                 size: m.len(),
                 modified: m.mtime.unwrap_or(0) as u64,
                 name: e.file_name(),
@@ -429,6 +434,31 @@ pub async fn sftp_list(s: &SftpSession, path: &str) -> Result<(String, Vec<Entry
         .collect();
     v.sort_by(|a, b| b.dir.cmp(&a.dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     Ok((path, v))
+}
+
+/// `rm -r` over SFTP: files first, then directories deepest first. Symlinks are removed, never followed.
+pub async fn sftp_remove_all(s: &SftpSession, path: &str) -> Result<()> {
+    if path.trim_end_matches('/').is_empty() {
+        bail!("refus de supprimer la racine");
+    }
+    let mut dirs = vec![path.trim_end_matches('/').to_string()];
+    let mut i = 0;
+    while i < dirs.len() {
+        let d = dirs[i].clone();
+        for e in s.read_dir(&d).await? {
+            let name = e.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            let p = format!("{d}/{name}");
+            if e.metadata().is_dir() { dirs.push(p) } else { s.remove_file(p).await? }
+        }
+        i += 1;
+    }
+    for d in dirs.into_iter().rev() {
+        s.remove_dir(d).await?;
+    }
+    Ok(())
 }
 
 pub async fn sftp_download(s: &SftpSession, remote: &str, local: &str) -> Result<()> {

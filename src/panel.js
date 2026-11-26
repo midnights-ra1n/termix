@@ -1,8 +1,8 @@
 // Right panel: server stats + SFTP browser for the active session.
 import { open as openDialog, save as saveDialog, confirm } from "@tauri-apps/plugin-dialog";
-import { S, h, icon, invoke, toast, fmtBytes, fmtUptime, modal, field, osIcon, statusDot } from "./ui.js";
+import { S, h, icon, invoke, toast, fmtBytes, fmtUptime, modal, field, osIcon, osKey, statusDot, saveHosts, contextMenu } from "./ui.js";
 import { activeSession, events, newTab } from "./panes.js";
-import { t } from "./i18n.js";
+import { t, lang } from "./i18n.js";
 
 let tab = "stats";
 let pane = null;
@@ -66,6 +66,9 @@ async function stats() {
     tx = Math.max(0, (st.net_tx - prev.st.net_tx) / sec);
   }
   prev = { st, t: now };
+  // Remembered on the host for its "os:auto" icon (sidebar, pickers).
+  const os = osKey(st.os_id, st.kernel), saved = S.hosts.hosts.find((x) => x.id === p.host.id);
+  if (os && saved && saved.os !== os) { saved.os = os; saveHosts().catch(() => {}); }
   const body = document.getElementById("panel-body");
   const head = [hostCard(st), h("div.kvs", {}, kv(t("kernel"), st.kernel), kv(t("uptime"), st.uptime_secs ? fmtUptime(st.uptime_secs) : ""))];
   if (!st.mem_total_kb) return body.replaceChildren(...head, h("p.empty", {}, t("linux_only")));
@@ -82,6 +85,31 @@ async function stats() {
 }
 
 const join = (dir, name) => (dir.endsWith("/") ? dir : dir + "/") + name;
+const parentOf = (dir) => dir.replace(/\/[^/]+\/?$/, "") || "/";
+/** Single-quoted for the remote shell. */
+const shq = (v) => "'" + v.replace(/'/g, `'\\''`) + "'";
+const modeStr = (m) => [..."rwxrwxrwx"].map((c, i) => (m & (0o400 >> i) ? c : "-")).join("");
+
+// View options, kept between launches (this device only).
+const sv = { hidden: false, sort: "name", desc: false };
+try { Object.assign(sv, JSON.parse(localStorage.getItem("sftp") || "{}")); } catch {}
+const saveView = () => { try { localStorage.setItem("sftp", JSON.stringify(sv)); } catch {} };
+let filter = "";
+
+function fmtDate(secs) {
+  if (!secs) return "";
+  const d = new Date(secs * 1000), thisYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleString(lang, thisYear ? { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** One-field dialog; resolves with the trimmed value, or null. */
+async function ask(title, label, value = "", hint) {
+  const input = h("input", { value, autofocus: true });
+  const ok = await modal(title, (close) => h("form", { onsubmit: (e) => { e.preventDefault(); close(true); } }, field(label, input, hint),
+    h("footer", {}, h("button.btn", { type: "button", onclick: () => close(false) }, t("cancel")), h("button.btn.primary", { type: "submit" }, t("save")))));
+  return ok && input.value.trim() ? input.value.trim() : null;
+}
+const run = (p, after) => p.then(after, (e) => toast(String(e), "error"));
 
 async function sftp(path) {
   const p = pane;
@@ -90,16 +118,93 @@ async function sftp(path) {
   const body = document.getElementById("panel-body");
   let dir, entries;
   try { [dir, entries] = await invoke("sftp_list", { id, path }); }
-  catch (e) { return body.replaceChildren(h("p.error", {}, "SFTP : " + e)); }
+  catch (e) { return body.replaceChildren(h("p.error", {}, "SFTP : " + e), h("div.actions", {}, h("button.btn.small", { onclick: () => sftp(cwd) }, t("retry")))); }
   if (p !== pane || tab !== "sftp") return;
+  if (dir !== cwd) filter = "";
   cwd = dir;
-  const up = dir.replace(/\/[^/]+\/?$/, "") || "/";
-  const act = (label, ic, fn) => h("button.icon-btn", { "aria-label": label, title: label, onclick: fn }, icon(ic, 15));
+  const act = (label, ic, fn, pressed) => h("button.icon-btn" + (pressed ? ".on" : ""), { "aria-label": label, title: label, "aria-pressed": pressed == null ? null : String(pressed), onclick: fn }, icon(ic, 15));
+  const reload = () => sftp(dir);
+  const list = h("ul.files", { role: "list" });
+  const cols = h("div.cols");
+  const foot = h("p.files-foot.mute.small");
+
+  const open = (e) => (e.dir ? sftp(join(dir, e.name)) : download(id, dir, e));
+  const rename = async (e) => {
+    const to = await ask(t("sftp_rename"), t("sftp_new_name"), e.name);
+    if (to && to !== e.name) run(invoke("sftp_rename", { id, from: join(dir, e.name), to: to.startsWith("/") ? to : join(dir, to) }), reload);
+  };
+  const chmod = async (e) => {
+    const v = await ask(t("sftp_perms"), e.name, (e.perm & 0o7777).toString(8).padStart(3, "0"), `${modeStr(e.perm)} — ${t("sftp_perms_hint")}`);
+    if (v == null) return;
+    if (!/^[0-7]{3,4}$/.test(v)) return toast(t("sftp_perms_bad"), "error");
+    run(invoke("sftp_chmod", { id, path: join(dir, e.name), mode: parseInt(v, 8) }), reload);
+  };
+  const remove = async (e) => {
+    if (!(await confirm(t(e.dir ? "confirm_rm_dir" : "confirm_rm", e.name), { kind: "warning" }))) return;
+    run(invoke("sftp_remove", { id, path: join(dir, e.name), dir: e.dir }), reload);
+  };
+  // Types `cd` into this pane's shell: the terminal follows the browser.
+  const cdHere = (path) => invoke("ssh_write", { id, data: ` cd -- ${shq(path)}\r` }).catch((er) => toast(String(er), "error"));
+  const menu = (ev, e) => contextMenu(ev, [
+    e.dir ? { label: t("sftp_open"), icon: "folderOpen", action: () => open(e) } : { label: t("download"), icon: "download", action: () => download(id, dir, e) },
+    { label: t("sftp_rename"), icon: "edit", action: () => rename(e) },
+    { label: t("sftp_perms"), icon: "lock", action: () => chmod(e) },
+    { label: t("sftp_copy_path"), icon: "copy", action: () => navigator.clipboard.writeText(join(dir, e.name)) },
+    { label: t("sftp_cd"), icon: "cdHere", action: () => cdHere(e.dir ? join(dir, e.name) : dir) },
+    "-",
+    { label: t("delete"), icon: "trash", danger: true, action: () => remove(e) },
+  ]);
+
+  const draw = () => {
+    const q = filter.toLowerCase();
+    const shown = entries.filter((e) => (sv.hidden || !e.name.startsWith(".")) && (!q || e.name.toLowerCase().includes(q)));
+    const by = { name: (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }), size: (a, b) => a.size - b.size, date: (a, b) => a.modified - b.modified }[sv.sort] || (() => 0);
+    shown.sort((a, b) => b.dir - a.dir || (sv.desc ? -1 : 1) * by(a, b));
+    const col = (k, label) => h("button.col." + k + (sv.sort === k ? ".on" : ""), { type: "button", "aria-pressed": String(sv.sort === k),
+      onclick: () => { sv.desc = sv.sort === k && !sv.desc; sv.sort = k; saveView(); draw(); } }, label, sv.sort === k ? (sv.desc ? " ↓" : " ↑") : "");
+    cols.replaceChildren(col("name", t("sftp_name")), col("size", t("sftp_size")), col("date", t("sftp_date")));
+    list.replaceChildren(...shown.map((e) => h("li", { oncontextmenu: (ev) => { ev.preventDefault(); menu(ev, e); } },
+      h("button.row", { title: [e.name, e.perm ? modeStr(e.perm) : "", fmtDate(e.modified)].filter(Boolean).join("\n"), ondblclick: () => open(e),
+        onkeydown: (ev) => {
+          if (ev.key === "Enter") open(e);
+          else if (ev.key === "F2") rename(e);
+          else if (ev.key === "Delete" || (ev.key === "Backspace" && (ev.metaKey || ev.ctrlKey))) remove(e);
+          else return;
+          ev.preventDefault();
+        } },
+        icon(e.dir ? "folder" : e.link ? "link" : "file", 15), h("span.name", {}, e.name),
+        h("span.mono.mute.size", {}, e.dir ? "" : fmtBytes(e.size)), h("span.mono.mute.date", {}, fmtDate(e.modified))),
+      act(t("more"), "more", (ev) => menu(ev, e)))));
+    const hidden = entries.filter((e) => e.name.startsWith(".")).length;
+    foot.textContent = t("sftp_count", shown.length) + (!sv.hidden && hidden ? " · " + t("sftp_hidden_n", hidden) : "");
+    if (!shown.length) list.append(h("li.empty", {}, entries.length ? t("no_result") : t("sftp_empty")));
+  };
+
+  const hiddenBtn = act(t("sftp_hidden"), sv.hidden ? "eye" : "eyeOff", () => {
+    sv.hidden = !sv.hidden;
+    saveView();
+    hiddenBtn.replaceChildren(icon(sv.hidden ? "eye" : "eyeOff", 15));
+    hiddenBtn.classList.toggle("on", sv.hidden);
+    hiddenBtn.setAttribute("aria-pressed", String(sv.hidden));
+    draw();
+  }, sv.hidden);
   body.replaceChildren(
     h("div.sftp-bar", {},
-      act(t("parent_dir"), "up", () => sftp(up)),
+      act(t("parent_dir"), "up", () => sftp(parentOf(dir))),
+      act(t("sftp_home"), "home", () => sftp("")),
       h("input.path", { value: dir, "aria-label": t("path"), onkeydown: (e) => e.key === "Enter" && sftp(e.target.value) }),
-      act(t("refresh"), "refresh", () => sftp(dir)),
+      act(t("refresh"), "refresh", reload)),
+    h("div.sftp-bar", {},
+      h("input.path.filter", { type: "search", value: filter, placeholder: t("sftp_filter"), "aria-label": t("sftp_filter"), oninput: (e) => { filter = e.target.value; draw(); } }),
+      hiddenBtn,
+      act(t("sftp_new_file"), "filePlus", async () => {
+        const name = await ask(t("sftp_new_file"), t("sftp_file_name"));
+        if (name) run(invoke("sftp_touch", { id, path: join(dir, name) }), reload);
+      }),
+      act(t("mkdir"), "folderPlus", async () => {
+        const name = await ask(t("mkdir"), t("folder_name"));
+        if (name) run(invoke("sftp_mkdir", { id, path: join(dir, name) }), reload);
+      }),
       act(t("upload"), "upload", async () => {
         const files = await openDialog({ multiple: true, title: t("upload_to", dir) });
         for (const f of [files].flat().filter(Boolean)) {
@@ -107,23 +212,11 @@ async function sftp(path) {
           try { await invoke("sftp_upload", { id, local: f, remote: join(dir, name) }); toast(t("sent", name), "success"); }
           catch (e) { toast(String(e), "error"); }
         }
-        sftp(dir);
-      }),
-      act(t("mkdir"), "folderPlus", async () => {
-        const name = h("input", { autofocus: true });
-        const ok = await modal(t("mkdir"), (close) => h("form", { onsubmit: (e) => { e.preventDefault(); close(true); } }, field(t("folder_name"), name),
-          h("footer", {}, h("button.btn", { type: "button", onclick: () => close(false) }, t("cancel")), h("button.btn.primary", { type: "submit" }, t("create")))));
-        if (ok && name.value) invoke("sftp_mkdir", { id, path: join(dir, name.value) }).then(() => sftp(dir), (e) => toast(String(e), "error"));
+        reload();
       })),
-    h("ul.files", { role: "list" }, ...entries.map((e) => h("li", {},
-      h("button.row", { ondblclick: () => (e.dir ? sftp(join(dir, e.name)) : download(id, dir, e)), onkeydown: (ev) => ev.key === "Enter" && (e.dir ? sftp(join(dir, e.name)) : download(id, dir, e)), title: e.name },
-        icon(e.dir ? "folder" : "file", 15), h("span.name", {}, e.name), h("span.mono.mute.size", {}, e.dir ? "" : fmtBytes(e.size))),
-      !e.dir && act(t("download"), "download", () => download(id, dir, e)),
-      act(t("delete"), "trash", async () => {
-        if (!(await confirm(t("confirm_rm", e.name), { kind: "warning" }))) return;
-        invoke("sftp_remove", { id, path: join(dir, e.name), dir: e.dir }).then(() => sftp(dir), (er) => toast(String(er), "error"));
-      })))),
+    cols, list, foot,
   );
+  draw();
 }
 
 async function download(id, dir, e) {

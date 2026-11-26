@@ -7,6 +7,7 @@ import {
   X, Upload, Download, RefreshCw, ArrowUp, File, Trash2, PanelLeftInactive, PanelRight, Columns2, Rows2,
   ChevronRight, GripVertical, Activity, FolderTree, CloudCheck, CloudOff, CloudAlert, CloudSync,
   Plug, Layers, Pencil, Copy, StarOff, ClipboardPaste, Scissors, Eraser, SquareDashed,
+  Eye, EyeOff, FilePlus, Ellipsis, Lock, Tag, Tags, Link, SquareTerminal, RotateCw,
 } from "lucide";
 import {
   siDebian, siUbuntu, siAlmalinux, siRockylinux, siFedora, siArchlinux, siAlpinelinux, siCentos, siRedhat, siOpensuse,
@@ -38,22 +39,30 @@ const UI_ICONS = {
   chevron: ChevronRight, grip: GripVertical, stats: Activity, folderTree: FolderTree,
   syncOk: CloudCheck, syncOff: CloudOff, syncConflict: CloudAlert, syncing: CloudSync,
   connect: Plug, tmux: Layers, edit: Pencil, copy: Copy, unstar: StarOff, paste: ClipboardPaste, cut: Scissors,
-  clear: Eraser, selectAll: SquareDashed,
+  clear: Eraser, selectAll: SquareDashed, eye: Eye, eyeOff: EyeOff, filePlus: FilePlus, more: Ellipsis, lock: Lock,
+  tag: Tag, tags: Tags, link: Link, cdHere: SquareTerminal, reconnect: RotateCw,
 };
 
 const OS = {
   debian: siDebian, ubuntu: siUbuntu, almalinux: siAlmalinux, rocky: siRockylinux, fedora: siFedora, arch: siArchlinux,
   alpine: siAlpinelinux, centos: siCentos, rhel: siRedhat, opensuse: siOpensuse, "opensuse-leap": siOpensuse,
   "opensuse-tumbleweed": siOpensuse, linuxmint: siLinuxmint, manjaro: siManjaro, nixos: siNixos, gentoo: siGentoo,
-  kali: siKalilinux, pop: siPopos, raspbian: siRaspberrypi, proxmox: siProxmox, freebsd: siFreebsd, darwin: siApple,
+  kali: siKalilinux, pop: siPopos, raspbian: siRaspberrypi, proxmox: siProxmox, freebsd: siFreebsd, darwin: siApple, linux: siLinux,
 };
-/** Distribution logo from /etc/os-release ID (Proxmox is detected from its kernel). Returns [svg, brand colour]. */
+/** Logos offered in the host editor (one per distribution: aliases left out). */
+export const OS_LOGOS = Object.entries(OS).filter(([k, si], i, all) => all.findIndex(([, x]) => x === si) === i).map(([k, si]) => [k, si.title]);
+/** Key into OS from /etc/os-release ID and kernel (Proxmox is detected from its kernel); "" with nothing to go on. */
+export function osKey(id = "", kernel = "") {
+  const key = id.toLowerCase();
+  if (/-pve\b/.test(kernel)) return "proxmox";
+  if (key) return OS[key] ? key : "linux";
+  if (/freebsd/i.test(kernel)) return "freebsd";
+  if (/darwin/i.test(kernel)) return "darwin";
+  return kernel ? "linux" : "";
+}
+/** Distribution logo. Returns [svg, brand colour]. */
 export function osIcon(id = "", kernel = "", size = 28) {
-  let key = id.toLowerCase();
-  if (/-pve\b/.test(kernel)) key = "proxmox";
-  else if (!key && /freebsd/i.test(kernel)) key = "freebsd";
-  else if (!key && /darwin/i.test(kernel)) key = "darwin";
-  const si = OS[key] || siLinux;
+  const si = OS[osKey(id, kernel)] || siLinux;
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -75,6 +84,17 @@ export function icon(name, size = 16) {
   el.setAttribute("aria-hidden", "true");
   return el;
 }
+
+/** A host's icon: built-in set, a distribution logo ("os:debian"), or the detected one ("os:auto", see panel.js). */
+export function hostIcon(x, size = 15) {
+  const ic = x.icon || "server";
+  if (!ic.startsWith("os:")) return icon(ic, size);
+  const key = ic === "os:auto" ? x.os : ic.slice(3);
+  return key ? osIcon(key, "", size)[0] : icon("server", size);
+}
+
+/** Stable hue per tag name, so a tag keeps its colour everywhere. */
+export const tagHue = (tag) => [...tag].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7) % 360;
 
 /** h("div.cls", {attrs/on*}, ...children) */
 export function h(tag, props = {}, ...kids) {

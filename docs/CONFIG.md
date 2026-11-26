@@ -5,7 +5,7 @@ Tout ce qui est réglable dans **Réglages** (⌘, sur macOS, Ctrl+Shift+, aille
 | Fichier | Contenu |
 |---|---|
 | `config.toml` | apparence, terminal, comportement, agent SSH, raccourcis, thèmes perso |
-| `hosts.json` | dossiers et hôtes (sans aucun secret) |
+| `hosts.json` | dossiers et hôtes (sans aucun secret). `icon` : `server`, `cloud`… ; `os:debian`, `os:ubuntu`… pour un logo de distribution ; `os:auto` = logo détecté à la connexion (champ `os`) |
 | `keys.json` | clés SSH gardées sur cet appareil seulement : nom et clé publique (la clé privée est dans le trousseau) |
 | `keys/` | clés privées importées par les versions précédentes (droits 0600), toujours utilisables comme fichier de clé |
 
@@ -37,7 +37,7 @@ right_panel = true           # panneau Stats, SFTP, Docker, tmux
 sidebar_width = 248          # largeur de la barre latérale (px), aussi en glissant son bord
 panel_width = 300            # largeur du panneau de droite (px), double-clic sur le bord = valeur par défaut
 accent = ""                  # ancien réglage, remplacé par [appearance.colors] accent
-density = "comfortable"      # comfortable, compact
+density = "comfortable"      # comfortable, compact (lignes plus serrées dans la liste, SFTP et panneaux)
 
 [appearance.colors]          # remplace des couleurs du thème actif ("#RRGGBB"), clé absente = couleur du thème
 # accent = "#C3BAFE"         # boutons, focus, jauges
@@ -69,7 +69,7 @@ focus_single = false         # bordure de focus aussi quand l'onglet n'a qu'une 
 focus_width = 2              # épaisseur de la bordure de focus, en px (1 à 6)
 background_opacity = 100     # opacité du fond (30 à 100, en dessous le texte devient illisible) ; en dessous de 100, l'image ou le bureau apparaît derrière le texte
                              # (macOS / Windows : la fenêtre devient transparente au prochain lancement)
-background_blur = 0          # flou de l'image, en px ; sans image, > 0 floute le bureau (flou du système, prioritaire sur liquid_glass)
+background_blur = 20         # flou de l'image, en px ; sans image, > 0 floute le bureau (flou du système, prioritaire sur liquid_glass), 0 = net
 background_image = ""        # image choisie dans les Réglages : "<empreinte>.jpg", copiée dans backgrounds/ et synchronisée ;
                              # ou un chemin sur cette machine (png, jpg, webp, gif, avif, bmp ; 40 Mo max), non synchronisé.
                              # Vide = aucune. Au-delà de 2 Mo, l'image est réduite (JPEG, 4K au plus).
@@ -100,6 +100,7 @@ update_channel = "stable"    # stable, beta, nightly
 [ssh]
 agent_socket = ""            # vide = détection auto, sinon chemin du socket / named pipe
 keepalive_secs = 30          # 0 = désactivé
+auto_reconnect = true        # connexion perdue (réseau, veille) : reconnexion seule dans le même terminal, session tmux reprise
 
 [keybindings]
 split_right = "Cmd+D"

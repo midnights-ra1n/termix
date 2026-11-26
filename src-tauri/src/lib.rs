@@ -277,8 +277,9 @@ async fn ssh_connect(
         move |d| {
             let _ = on_data.send(InvokeResponseBody::Raw(d));
         },
-        move |_| {
-            let _ = app2.emit("ssh-closed", &id2);
+        // ended: the shell exited (no reconnect); false: the connection was lost.
+        move |ended| {
+            let _ = app2.emit("ssh-closed", (&id2, ended));
             let app3 = app2.clone();
             let id3 = id2.clone();
             tauri::async_runtime::spawn(async move {
@@ -381,7 +382,33 @@ async fn sftp_mkdir(st: State<'_, AppState>, id: String, path: String) -> R<()> 
 async fn sftp_remove(st: State<'_, AppState>, id: String, path: String, dir: bool) -> R<()> {
     let s = sess(&st, &id).await?;
     let sftp = s.sftp().await.map_err(e)?;
-    if dir { sftp.remove_dir(path).await } else { sftp.remove_file(path).await }.map_err(e)
+    if dir { ssh::sftp_remove_all(sftp, &path).await.map_err(e) } else { sftp.remove_file(path).await.map_err(e) }
+}
+
+#[tauri::command]
+async fn sftp_rename(st: State<'_, AppState>, id: String, from: String, to: String) -> R<()> {
+    let s = sess(&st, &id).await?;
+    s.sftp().await.map_err(e)?.rename(from, to).await.map_err(e)
+}
+
+#[tauri::command]
+async fn sftp_chmod(st: State<'_, AppState>, id: String, path: String, mode: u32) -> R<()> {
+    let s = sess(&st, &id).await?;
+    let mut attrs = russh_sftp::protocol::FileAttributes::empty();
+    attrs.permissions = Some(mode & 0o7777);
+    s.sftp().await.map_err(e)?.set_metadata(path, attrs).await.map_err(e)
+}
+
+/// New empty file; fails if it already exists rather than truncating it.
+#[tauri::command]
+async fn sftp_touch(st: State<'_, AppState>, id: String, path: String) -> R<()> {
+    let s = sess(&st, &id).await?;
+    let sftp = s.sftp().await.map_err(e)?;
+    if sftp.try_exists(path.clone()).await.map_err(e)? {
+        return Err("ce fichier existe déjà".into());
+    }
+    let mut f = sftp.create(path).await.map_err(e)?;
+    tokio::io::AsyncWriteExt::shutdown(&mut f).await.map_err(e)
 }
 
 // ---------- updates ----------
@@ -857,7 +884,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_image, import_background, window_blur, reduce_transparency, boot, app_ready, set_labels, get_menu, menu_click, host_status, refresh_status, save_settings, get_hosts, save_hosts, export_hosts, read_hosts_file, set_secret, has_secret, detect_agents,
             ssh_connect, recent_sessions, ssh_write, ssh_resize, ssh_close, ssh_stats, ssh_history, docker_ps, tmux_list, tmux_kill,
-            sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove,
+            sftp_list, sftp_download, sftp_upload, sftp_mkdir, sftp_remove, sftp_rename, sftp_chmod, sftp_touch,
             check_update, install_update,
             syncd::sync_status, syncd::sync_set_mode, syncd::sync_login, syncd::sync_logout, syncd::sync_unlock, syncd::sync_lock, syncd::sync_now, syncd::sync_set_interval, syncd::sync_set_keybindings, syncd::sync_take_keybindings, syncd::sync_resolve,
             syncd::p2p_pair_start, syncd::p2p_pair, syncd::p2p_forget, syncd::sync_set_workspace, syncd::sync_workspaces,

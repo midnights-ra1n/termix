@@ -263,7 +263,10 @@ async function openSettings(section = "general") {
   const range = (value, min, max, unit = "%") => {
     const input = h("input", { type: "range", min, max, value, "aria-valuetext": value + unit });
     const out = h("output", { "aria-hidden": "true" }, value + unit); // the slider announces its own value
-    input.oninput = () => { out.value = input.value + unit; input.setAttribute("aria-valuetext", out.value); };
+    // --p: filled part of the track (style.css draws the slider itself: WebKit's native one drew the knob off its value).
+    const fill = () => input.style.setProperty("--p", ((input.value - min) / (max - min)) * 100 + "%");
+    input.oninput = () => { out.value = input.value + unit; input.setAttribute("aria-valuetext", out.value); fill(); };
+    fill();
     const el = h("div.range", {}, input, out);
     el.input = input;
     return el;
@@ -307,6 +310,7 @@ async function openSettings(section = "general") {
     update_channel: sel(s.behavior.update_channel, [["stable", t("ch_stable")], ["beta", t("ch_beta")], ["nightly", t("ch_nightly")]]),
     agent_socket: h("input", { value: s.ssh.agent_socket, placeholder: t("agent_auto"), list: "agents" }),
     keepalive: num(s.ssh.keepalive_secs, 0, 600),
+    auto_reconnect: sw(s.ssh.auto_reconnect),
     bg_opacity: range(Math.max(30, s.terminal.background_opacity), 30, 100), // below 30 % text over a busy image is unreadable
     bg_blur: range(s.terminal.background_blur, 0, 40, " px"),
     bg_image_opacity: range(s.terminal.background_image_opacity, 0, 100),
@@ -396,6 +400,7 @@ async function openSettings(section = "general") {
       h("p.mute.small", {}, t("perf_scrollback_hint"))],
     ssh: [t("set_ssh"), h("div.form-grid", {}, h("div.span2", {}, field(t("agent_socket"), f.agent_socket, t("agent_hint"))), agents,
       field(t("keepalive"), f.keepalive)),
+      h("div.toggles", {}, row(t("auto_reconnect"), f.auto_reconnect, t("auto_reconnect_hint"))),
       h("h4", {}, t("agents_found")), found],
     sshkeys: [t("set_sshkeys"), keysView()],
     keys: [t("set_keys"), h("p.mute.small", {}, t("keys_hint")), h("div.kb-list", {}, ...kbRows)],
@@ -432,7 +437,7 @@ async function saveSettingsForm(f, colors, kb, bgImage) {
   Object.assign(s.appearance, { language: f.language.value, theme: f.theme.value, ui_font: f.ui_font.read(), ui_font_size: n(f.ui_font_size, 13), accent: "", colors: Object.fromEntries(colors.filter((c) => c.on.checked).map((c) => [c.k, c.pick.value])), density: f.density.value });
   Object.assign(s.terminal, { font_family: f.font_family.read(), font_size: n(f.font_size, 13), line_height: n(f.line_height, 1.2), cursor_style: f.cursor_style.value, cursor_blink: f.cursor_blink.checked, scrollback: n(f.scrollback, 10000), copy_on_select: f.copy_on_select.checked, suggestions: f.suggestions.checked, tmux: f.tmux.checked, keep_focus: f.keep_focus.checked, font_weight: f.font_weight.value, letter_spacing: n(f.letter_spacing, 0), padding: n(f.padding, 8), bold_is_bright: f.bold_is_bright.checked, focus_single: f.focus_single.checked, focus_width: Math.min(6, Math.max(1, n(f.focus_width, 2))) });
   Object.assign(s.behavior, { tray_icon: f.tray_icon.checked, run_in_background: f.run_in_background.checked, multi_instance: f.multi_instance.checked, check_updates: f.check_updates.checked, update_channel: f.update_channel.value, tray_hosts: f.tray_hosts.value, tray_count: +f.tray_count.value || 5 });
-  Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30) });
+  Object.assign(s.ssh, { agent_socket: f.agent_socket.value.trim(), keepalive_secs: n(f.keepalive, 30), auto_reconnect: f.auto_reconnect.checked });
   // A picked file is copied into the config folder (shrunk if big), so the sync can carry it to other devices.
   let img = bgImage.value.trim();
   if (img !== s.terminal.background_image && /[\\/]/.test(img)) {

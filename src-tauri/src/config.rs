@@ -17,6 +17,13 @@ pub fn migrate_fonts(s: &mut Settings) {
     }
 }
 
+/// Blur became the default (1.3): configs that never lowered the opacity get it; an explicit 0 below 100 % stays.
+fn migrate_blur(s: &mut Settings) {
+    if s.terminal.background_opacity >= 100 && s.terminal.background_blur == 0 {
+        s.terminal.background_blur = Terminal::default().background_blur;
+    }
+}
+
 fn device_name() -> String {
     let h = std::process::Command::new("hostname").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
     h.filter(|s| !s.is_empty()).unwrap_or_else(|| std::env::consts::OS.into())
@@ -208,12 +215,20 @@ pub struct Behavior {
     pub tray_count: usize,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Ssh {
     /// Empty = auto-detect (ssh config IdentityAgent, then $SSH_AUTH_SOCK from the login shell).
     pub agent_socket: String,
     pub keepalive_secs: u64,
+    /// Reconnect by itself when the connection drops (not when the shell exits).
+    pub auto_reconnect: bool,
+}
+
+impl Default for Ssh {
+    fn default() -> Self {
+        Self { agent_socket: String::new(), keepalive_secs: 30, auto_reconnect: true }
+    }
 }
 
 impl Default for Settings {
@@ -224,7 +239,7 @@ impl Default for Settings {
             performance: Performance::default(),
             window: WindowStyle::default(),
             behavior: Behavior::default(),
-            ssh: Ssh { agent_socket: String::new(), keepalive_secs: 30 },
+            ssh: Ssh::default(),
             keybindings: BTreeMap::new(),
             themes: BTreeMap::new(),
             sync: Sync::default(),
@@ -256,7 +271,7 @@ impl Default for Terminal {
             focus_single: false,
             focus_width: 2,
             background_opacity: 100,
-            background_blur: 0,
+            background_blur: 20,
             background_image: String::new(),
             background_image_opacity: 100,
             background_image_fit: "cover".into(),
@@ -316,6 +331,7 @@ impl Settings {
             })
             .unwrap_or_default();
         migrate_fonts(&mut s);
+        migrate_blur(&mut s);
         if s.sync.mode.is_empty() {
             s.sync.mode = "off".into();
         }
@@ -363,6 +379,8 @@ pub struct Host {
     pub favorite: bool,
     /// tmux for this host: "" = the global setting, "on" = always, "off" = never.
     pub tmux: String,
+    /// Distribution detected on the last connection (os-release ID, e.g. "debian"); shown when `icon` is "os:auto".
+    pub os: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -532,6 +550,17 @@ pub fn secret_set(id: &str, value: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn blur_default_reaches_old_configs_only_when_unused() {
+        let mut s: Settings = toml::from_str("[terminal]\nbackground_blur = 0\n").unwrap();
+        migrate_blur(&mut s);
+        assert_eq!(s.terminal.background_blur, 20);
+        let mut s: Settings = toml::from_str("[terminal]\nbackground_opacity = 80\nbackground_blur = 0\n").unwrap();
+        migrate_blur(&mut s);
+        assert_eq!(s.terminal.background_blur, 0);
+        let s: Settings = toml::from_str("[ssh]\nkeepalive_secs = 10\n").unwrap();
+        assert!(s.ssh.auto_reconnect);
+    }
     #[test]
     fn geist_defaults_move_to_plex() {
         let mut s = Settings::default();

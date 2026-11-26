@@ -15,6 +15,7 @@ struct Host: Codable, Identifiable, Hashable {
     var folder: String?
     var favorite = false
     var tmux = ""
+    var os = ""
 
     var title: String { name.isEmpty ? host : name }
     var address: String {
